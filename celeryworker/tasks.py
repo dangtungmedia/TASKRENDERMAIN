@@ -2266,7 +2266,7 @@ def update_info_video(data, task_id, worker_id):
         url_thumnail = get_youtube_thumbnail(video_url)
 
         update_status_video("Đang Render : Đã lấy thành công thông tin video reup", 
-                          video_id, task_id, worker_id,url_thumbnail=url_thumnail['max'],title=result["title"])
+                          video_id, task_id, worker_id,url_thumbnail=url_thumnail,title=result["title"])
         return True
 
     except requests.RequestException as e:
@@ -2300,7 +2300,7 @@ def get_youtube_thumbnail(youtube_url):
         pattern = r'(?:https?:\/{2})?(?:w{3}\.)?youtu(?:be)?\.(?:com|be)(?:\/watch\?v=|\/)([^\s&]+)'
         video_id = re.findall(pattern, youtube_url)[0]
         
-        # Tạo các URL thumbnail
+        # Tạo các URL thumbnail theo thứ tự độ phân giải
         thumbnails = {
             'max': f'https://i3.ytimg.com/vi/{video_id}/maxresdefault.jpg',
             'hq': f'https://i3.ytimg.com/vi/{video_id}/hqdefault.jpg',
@@ -2309,8 +2309,22 @@ def get_youtube_thumbnail(youtube_url):
             'default': f'https://i3.ytimg.com/vi/{video_id}/default.jpg'
         }
         
-        return thumbnails
+        # Thử tải lần lượt từ max đến default
+        for quality, url in thumbnails.items():
+            try:
+                response = requests.get(url, stream=True)
+                if response.status_code == 200:
+                    print(f"Thumbnail found: {quality} - {url}")
+                    return url
+                else:
+                    print(f"lỗi ảnh {url}")
+            except requests.exceptions.RequestException:
+                print(f"lỗi ảnh {url}")
+                continue
         
+        # Nếu không có thumbnail nào khả dụng
+        return "No valid thumbnail found."
+
     except Exception as e:
         return f"Error: {str(e)}"
 
