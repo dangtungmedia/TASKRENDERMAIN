@@ -308,6 +308,7 @@ def convert_video(input_path, output_path, target_resolution="1280x720", target_
         "-r", str(target_fps),
         "-c:v", "h264_nvenc",
         "-preset", "fast",
+        "-y",
         output_path
     ]
 
