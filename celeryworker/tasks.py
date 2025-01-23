@@ -290,7 +290,7 @@ def render_video_reupload(self, data):
     update_status_video(f"Render Thành Công : Đang Chờ Upload lên Kênh", data['video_id'], task_id, worker_id)
 
 
-def convert_video(input_path, output_path, target_resolution="1280x720", target_fps=24, max_retries=5, retry_delay=2):
+def convert_video(input_path, output_path, target_resolution="1280x720", target_fps=24, max_retries=10, retry_delay=2):
     """
     Hàm chuyển đổi video với cơ chế retry.
     - input_path: Đường dẫn file video đầu vào.
@@ -513,7 +513,6 @@ def cread_test_reup(data, task_id, worker_id):
         update_status_video("Đang Lỗi: Lỗi xuất video bằng ffmpeg vui lòng chạy lại", data['video_id'], task_id, worker_id)
         return False
 
-    
 def select_videos_by_total_duration(file_path, min_duration):
     # Đọc dữ liệu từ tệp JSON
     with open(file_path, 'r', encoding='utf-8') as file:
