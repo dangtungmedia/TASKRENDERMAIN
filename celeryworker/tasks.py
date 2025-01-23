@@ -2239,9 +2239,10 @@ def get_youtube_thumbnail(youtube_url):
     except Exception as e:
         return f"Error: {str(e)}"
 
-class HttpClient:
+class WebSocketClient:
     def __init__(self, url, min_delay=1.0):
-        self.url = url  # Endpoint API URL
+        self.url = url
+        self.ws = None
         self.lock = Lock()
         self.last_send_time = 0
         self.min_delay = min_delay
@@ -2274,8 +2275,21 @@ class HttpClient:
         # Apply rate limiting for other statuses
         return time_since_last >= self.min_delay
         
-    def send(self, data, max_retries=3):
-        """Send data through HTTP request with rate limiting and retries"""
+    def connect(self):
+        """Establish WebSocket connection"""
+        try:
+            if self.ws is None or not self.ws.connected:
+                self.ws = websocket.WebSocket()
+                self.ws.settimeout(30)
+                self.ws.connect(self.url)
+                self.logger.info("Successfully connected to WebSocket")
+                return True
+        except Exception as e:
+            self.logger.error(f"Connection failed: {str(e)}")
+            return False
+
+    def send(self, data, max_retries=5):
+        """Send data through WebSocket with rate limiting and retries"""
         with self.lock:
             try:
                 status = data.get('status')
@@ -2285,23 +2299,24 @@ class HttpClient:
                     
                 for attempt in range(max_retries):
                     try:
-                        # Gửi HTTP POST request đến self.url
-                        response = requests.post(self.url, json=data, timeout=10)
+                        if not self.ws or not self.ws.connected:
+                            if not self.connect():
+                                sleep_time = min(2 * attempt + 1, 10)
+                                time.sleep(sleep_time)
+                                continue
+                                
+                        self.ws.send(json.dumps(data))
+                        self.last_send_time = time.time()
+                        self.logger.debug(f"Successfully sent message: {status}")
+                        return True
                         
-                        # Kiểm tra phản hồi
-                        if response.status_code == 200:
-                            self.last_send_time = time.time()
-                            self.logger.info(f"Successfully sent message: {status}")
-                            return True
-                        else:
-                            self.logger.error(f"Failed to send message: {response.status_code} - {response.text}")
-                        
-                    except requests.Timeout:
+                    except websocket.WebSocketTimeoutException:
                         self.logger.error(f"Timeout on attempt {attempt + 1}")
-                    except requests.RequestException as e:
-                        self.logger.error(f"Request failed: {str(e)}")
+                        self.ws = None
+                    except Exception as e:
+                        self.logger.error(f"Send failed: {str(e)}")
+                        self.ws = None
                         
-                    # Delay trước khi thử lại
                     sleep_time = min(2 * attempt + 1, 10)
                     time.sleep(sleep_time)
                 
@@ -2311,11 +2326,21 @@ class HttpClient:
             except Exception as e:
                 self.logger.error(f"Error in send method: {str(e)}")
                 return False
+                
+    def close(self):
+        """Close WebSocket connection"""
+        try:
+            if self.ws:
+                self.ws.close()
+                self.logger.info("WebSocket connection closed")
+        except Exception as e:
+            self.logger.error(f"Error closing connection: {str(e)}")
 
-http_client = HttpClient(url="https://autospamnews.com/api/")
+ws_client = WebSocketClient("wss://autospamnews.com/ws/update_status/")
+
 def update_status_video(status_video, video_id, task_id, worker_id,url_thumbnail=None, url_video=None,title=None):
     data = {
-        "action": 'update_status',
+        "type": 'update-status',
         'video_id': video_id,
         'status': status_video,
         'task_id': task_id,
@@ -2325,6 +2350,6 @@ def update_status_video(status_video, video_id, task_id, worker_id,url_thumbnail
         'url_video': url_video,
         "secret_key": "ugz6iXZ.fM8+9sS}uleGtIb,wuQN^1J%EvnMBeW5#+CYX_ej&%"
     }
-    http_client.send(data)
+    ws_client.send(data)
 
 
