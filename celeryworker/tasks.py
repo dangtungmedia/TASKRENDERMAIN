@@ -87,10 +87,7 @@ class WebSocketClient:
         """Establish WebSocket connection"""
         try:
             if self.ws is None or not self.ws.connected:
-                self.ws = websocket.WebSocket(sslopt={
-                    "cert_reqs": ssl.CERT_NONE,
-                    "check_hostname": False
-                })
+                self.ws = websocket.WebSocket()
                 self.ws.settimeout(30)
                 self.ws.connect(self.url)
                 self.logger.info("Successfully connected to WebSocket")
