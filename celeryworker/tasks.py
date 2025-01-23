@@ -2357,5 +2357,6 @@ def update_status_video(status_video, video_id, task_id, worker_id,url_thumbnail
         'url_video': url_video,
     }
     ws_client.send(data)
+    print(f"đã giửi thông tin lên sever {status_video}")
 
 
