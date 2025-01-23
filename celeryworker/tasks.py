@@ -304,7 +304,7 @@ def convert_video(input_path, output_path, target_resolution="1280x720", target_
         "ffmpeg",
         "-loglevel", "error",  # Chỉ ghi lỗi
         "-i", input_path,
-        "-vf", f"scale={target_resolution}",
+        "-vf", f"format=yuv420p,scale={target_resolution}",
         "-r", str(target_fps),
         "-c:v", "h264_nvenc",
         "-preset", "fast",
@@ -325,7 +325,6 @@ def convert_video(input_path, output_path, target_resolution="1280x720", target_
             if attempt < max_retries:
                 print(f"Đang chờ {retry_delay} giây trước khi thử lại...")
                 time.sleep(retry_delay)
-    
     print("Đã thử tối đa số lần, chuyển đổi video thất bại.")
     return False
 
