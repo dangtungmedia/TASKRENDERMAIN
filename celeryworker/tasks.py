@@ -2280,7 +2280,7 @@ class WebSocketClient:
         try:
             if self.ws is None or not self.ws.connected:
                 self.ws = websocket.WebSocket()
-                self.ws.settimeout(30)
+                self.ws.settimeout(60)
                 self.ws.connect(self.url)
                 self.logger.info("Successfully connected to WebSocket")
                 return True
@@ -2288,7 +2288,7 @@ class WebSocketClient:
             self.logger.error(f"Connection failed: {str(e)}")
             return False
 
-    def send(self, data, max_retries=5):
+    def send(self, data, max_retries=20):
         """Send data through WebSocket with rate limiting and retries"""
         with self.lock:
             try:
