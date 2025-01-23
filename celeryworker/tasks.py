@@ -289,7 +289,17 @@ def render_video_reupload(self, data):
     shutil.rmtree(f'media/{video_id}')
     update_status_video(f"Render Thành Công : Đang Chờ Upload lên Kênh", data['video_id'], task_id, worker_id)
 
-def convert_video(input_path, output_path, target_resolution="1280x720", target_fps=24):
+
+def convert_video(input_path, output_path, target_resolution="1280x720", target_fps=24, max_retries=5, retry_delay=2):
+    """
+    Hàm chuyển đổi video với cơ chế retry.
+    - input_path: Đường dẫn file video đầu vào.
+    - output_path: Đường dẫn lưu file video đầu ra.
+    - target_resolution: Độ phân giải mục tiêu (mặc định 1280x720).
+    - target_fps: Số khung hình/giây mục tiêu (mặc định 24 fps).
+    - max_retries: Số lần thử lại tối đa (mặc định 5 lần).
+    - retry_delay: Thời gian chờ giữa các lần thử (tính bằng giây, mặc định 2 giây).
+    """
     ffmpeg_command = [
         "ffmpeg",
         "-loglevel", "error",  # Chỉ ghi lỗi
@@ -300,14 +310,23 @@ def convert_video(input_path, output_path, target_resolution="1280x720", target_
         "-preset", "fast",
         output_path
     ]
+
+    attempt = 0
+    while attempt < max_retries:
+        try:
+            print(f"Thử chuyển đổi video, lần thứ {attempt + 1}...")
+            subprocess.run(ffmpeg_command, check=True)
+            print(f"Video đã được chuyển đổi và lưu tại {output_path}")
+            return True
+        except subprocess.CalledProcessError as e:
+            attempt += 1
+            print(f"Lỗi khi chuyển đổi video (lần {attempt}): {e}")
+            if attempt < max_retries:
+                print(f"Đang chờ {retry_delay} giây trước khi thử lại...")
+                time.sleep(retry_delay)
     
-    try:
-        subprocess.run(ffmpeg_command, check=True)
-        print(f"Video đã được chuyển đổi và lưu tại {output_path}")
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"Lỗi khi chuyển đổi video: {e}")
-        return False
+    print("Đã thử tối đa số lần, chuyển đổi video thất bại.")
+    return False
 
     
 def cread_test_reup(data, task_id, worker_id):
@@ -2069,7 +2088,6 @@ def downdload_video_reup(data, task_id, worker_id):
     update_status_video(final_error_message, video_id, task_id, worker_id)
     print(final_error_message)
     return False
-
 
 class MyBarLogger(ProgressBarLogger):
     
