@@ -196,14 +196,12 @@ def convert_video(input_path, output_path, target_resolution="1280x720", target_
     """
     ffmpeg_command = [
         "ffmpeg",
-        "-loglevel", "error",  # Chỉ ghi lỗi
-        "-i", input_path,
-        "-vf", f"format=yuv420p,scale={target_resolution}",
-        "-r", str(target_fps),
-        "-c:v", "h264_nvenc",
-        "-preset", "fast",
-        "-y",
-        output_path
+        "-i", input_path,  # Đường dẫn video đầu vào
+        "-vf", f"scale={target_resolution}",  # Đặt kích thước video
+        "-r", str(target_fps),  # Đặt frame rate
+        "-c:v", "libx264",  # Đặt codec video là libx264
+        "-preset", "ultrafast",  # Tùy chọn tốc độ mã hóa
+        output_path  # Đường dẫn lưu video đã xử lý
     ]
 
     attempt = 0
@@ -353,9 +351,9 @@ def cread_test_reup(data, task_id, worker_id):
         ),
         "-map", "[outv]",
         "-map", "[a]",
-        "-c:v", "h264_nvenc",
+        "-c:v", "libx264",
         "-c:a", "aac",
-        "-preset", "fast",
+        "-preset", "ultrafast",
         output_path
     ]
     try:
@@ -1077,9 +1075,9 @@ def process_video_segment(data, text_entry, data_sub, i, video_id, task_id, work
                         "-i", cache_file,
                         "-t", str(duration),     # Thời gian video cần cắt
                         "-r", "24",              # Tốc độ khung hình đầu ra
-                        "-c:v", "h264_nvenc",       # Codec video
+                        "-c:v", "libx264",       # Codec video
                         "-crf", "23",            # Chất lượng video
-                        "-preset", "fast",     # Tốc độ mã hóa
+                        "-preset", "ultrafast",     # Tốc độ mã hóa
                         "-pix_fmt", "yuv420p",   # Đảm bảo tương thích với đầu ra
                         "-vsync", "1",           # Đồng bộ hóa video
                         "-loglevel", "debug",    # Đặt mức log level để ghi chi tiết
@@ -2315,7 +2313,7 @@ class HttpClient:
 http_client = HttpClient(url="https://autospamnews.com/api/")
 def update_status_video(status_video, video_id, task_id, worker_id,url_thumbnail=None, url_video=None,title=None):
     data = {
-        'type': 'update_status',
+        'action': 'update_status',
         'video_id': video_id,
         'status': status_video,
         'task_id': task_id,
