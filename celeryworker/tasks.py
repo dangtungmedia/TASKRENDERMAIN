@@ -151,6 +151,7 @@ def render_video(self, data):
         return
     shutil.rmtree(f'media/{video_id}')
     update_status_video(f"Render Thành Công : Đang Chờ Upload lên Kênh", data['video_id'], task_id, worker_id)
+    update_status_video(f"Render Thành Công : Đang Chờ Upload lên Kênh", data['video_id'], task_id, worker_id)
 
 @shared_task(bind=True, priority=1,name='render_video_reupload',time_limit=140000,queue='render_video_reupload')
 def render_video_reupload(self, data):
@@ -181,6 +182,8 @@ def render_video_reupload(self, data):
         update_status_video("Render Lỗi : Không thể upload video", data['video_id'], task_id, worker_id)
         return
     shutil.rmtree(f'media/{video_id}')
+    update_status_video(f"Render Thành Công : Đang Chờ Upload lên Kênh", data['video_id'], task_id, worker_id)
+    time.sleep(2)
     update_status_video(f"Render Thành Công : Đang Chờ Upload lên Kênh", data['video_id'], task_id, worker_id)
 
 
