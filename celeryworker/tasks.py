@@ -267,6 +267,7 @@ def cread_test_reup(data, task_id, worker_id):
         ),
         "-map", "[outv]",
         "-map", "[a]",
+        "-threads", "56",
         "-c:v", "libx264",
         "-c:a", "aac",
         "-preset", "ultrafast",
