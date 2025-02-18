@@ -17,7 +17,7 @@ for item in os.listdir(video_folder):
     
     shutil.move(source_path, destination_path)
 
-print("Đã di chuyển toàn bộ nội dung từ 'video' sang 'chace_video'.")
+print("✅ Đã di chuyển toàn bộ nội dung từ 'video' sang 'chace_video'.")
 
 # Cấu hình thông số chuyển đổi
 target_resolution = "1280x720"  # Độ phân giải mong muốn
