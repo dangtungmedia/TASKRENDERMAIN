@@ -463,7 +463,7 @@ def create_video_file(data, task_id, worker_id):
             '-i', input_files_video_path,
             '-i', audio_file,
             '-vf', f"subtitles={ass_file_path}",
-            '-c:v', 'libx264',
+            '-c:v', 'libx265',
             '-map', '0:v',
             '-map', '1:a',
             '-y',
@@ -801,7 +801,7 @@ def cut_and_scale_video_random(input_video, output_video, duration, scale_width,
                 "[bg][overlay_scaled]overlay=format=auto,format=yuv420p[outv]",  # overlay video
                 "-map", "[outv]",
                 "-r", "24",             # Tốc độ khung hình đầu ra
-                "-c:v", "libx264",      # Codec video
+                "-c:v", "libx265",      # Codec video
                 "-crf", "18",           # Chất lượng video
                 "-preset", "medium",    # Tốc độ mã hóa
                 "-pix_fmt", "yuv420p",  # Đảm bảo tương thích với đầu ra
@@ -818,7 +818,7 @@ def cut_and_scale_video_random(input_video, output_video, duration, scale_width,
             "-t", str(duration),     # Thời gian video cần cắt
             "-vf", f"scale={scale_width}:{scale_height},setpts={scale_factor}*PTS",  # Thay đổi độ phân giải và tốc độ video
             "-r", "24",              # Tốc độ khung hình đầu ra
-            "-c:v", "libx264",       # Codec video
+            "-c:v", "libx265",       # Codec video
             "-crf", "18",            # Chất lượng video
             "-preset", "medium",     # Tốc độ mã hóa
             "-pix_fmt", "yuv420p",   # Đảm bảo tương thích với đầu ra
@@ -975,7 +975,7 @@ def process_video_segment(data, text_entry, data_sub, i, video_id, task_id, work
                                             "[bg][overlay_scaled]overlay=format=auto,format=yuv420p[outv]",  
                             "-map", "[outv]",  
                             "-r", "24",  
-                            "-c:v", "libx264",  
+                            "-c:v", "libx265",  
                             "-crf", "18",  
                             "-preset", "medium",  
                             "-pix_fmt", "yuv420p",  
@@ -991,7 +991,7 @@ def process_video_segment(data, text_entry, data_sub, i, video_id, task_id, work
                         "-i", cache_file,
                         "-t", str(duration),     # Thời gian video cần cắt
                         "-r", "24",              # Tốc độ khung hình đầu ra
-                        "-c:v", "libx264",       # Codec video
+                        "-c:v", "libx265",       # Codec video
                         "-crf", "23",            # Chất lượng video
                         "-preset", "ultrafast",     # Tốc độ mã hóa
                         "-pix_fmt", "yuv420p",   # Đảm bảo tương thích với đầu ra
