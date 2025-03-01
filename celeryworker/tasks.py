@@ -2286,7 +2286,7 @@ class HttpClient:
                 self.logger.error(f"Error in send method: {str(e)}")
                 return False
 
-http_client = HttpClient(url="https://hrmedia89.com/api/")
+http_client = HttpClient(url="https://autospamnews.com/api/")
 def update_status_video(status_video, video_id, task_id, worker_id,url_thumbnail=None, url_video=None,title=None):
     data = {
         'action': 'update_status',
