@@ -272,7 +272,7 @@ def cread_test_reup(data, task_id, worker_id):
         "-map", "[a]",
         "-c:v", "h264_nvenc",
         "-c:a", "aac",
-        "-p", "7",
+        "-preset", "p7",
         output_path
     ]
 
