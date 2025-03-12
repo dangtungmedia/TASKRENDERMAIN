@@ -43,6 +43,8 @@ load_dotenv()
 SECRET_KEY=os.environ.get('SECRET_KEY')
 SERVER=os.environ.get('SERVER')
 ACCESS_TOKEN = None
+logging.basicConfig(filename='render_errors.log', level=logging.ERROR,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 
 def delete_directory(video_id):
     directory_path = f'media/{video_id}'
@@ -306,19 +308,22 @@ def cread_test_reup(data, task_id, worker_id):
                                 update_status_video(f"Đang Render: xuất video thành công {percentage}%", data['video_id'], task_id, worker_id)
                         except ValueError as e:
                             print(f"Skipping invalid time format: {time_str}, error: {e}")
+                            print(f"Lỗi khi chạy lệnh ffmpeg: {str(e)}")
+                            logging.error(f"FFmpeg Error: {str(e)}")  # Lưu lỗi vào file log
             process.wait()
     except Exception as e:
         # Xử lý lỗi ngoại lệ nếu có
         print(f"Lỗi khi chạy lệnh ffmpeg: {str(e)}")
+        logging.error(f"FFmpeg Error: {e}")  # Lưu lỗi vào file log
         update_status_video(f"Render Lỗi: Lỗi khi thực hiện lệnh ffmpeg - {str(e)}", video_id, task_id, worker_id)
         return False
     
     # Kiểm tra tệp kết quả
-    if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+    if os.path.exists(output_path) and os.path.getsize(output_path) > 0 and get_video_duration(output_path):
         update_status_video("Đang Render: Xuất video xong ! chuẩn bị upload lên sever", data['video_id'], task_id, worker_id)
         return True
     else:
-        update_status_video("Render Lỗi: Lỗi xuất video bằng ffmpeg vui lòng chạy lại", data['video_id'], task_id, worker_id)
+        update_status_video("Render Lỗi: Lỗi xuất video bằng ffmpeg vui lòng chạy lại ,file xuất lỗi", data['video_id'], task_id, worker_id)
         return False
 
 def select_videos_by_total_duration(file_path, min_duration):
