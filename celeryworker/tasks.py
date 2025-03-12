@@ -164,7 +164,6 @@ def render_video_reupload(self, data):
     success = create_or_reset_directory(f'media/{video_id}')
     if not success:
         shutil.rmtree(f'media/{video_id}')
-        update_status_video("Render Lỗi : Không thể tạo thư mục", data['video_id'], task_id, worker_id)
         return
     
     success = update_info_video(data, task_id, worker_id)
@@ -180,32 +179,45 @@ def render_video_reupload(self, data):
     success = upload_video(data, task_id, worker_id)
     if not success:
         shutil.rmtree(f'media/{video_id}')
-        update_status_video("Render Lỗi : Không thể upload video", data['video_id'], task_id, worker_id)
         return
     shutil.rmtree(f'media/{video_id}')
-    update_status_video(f"Render Thành Công : Đang Chờ Upload lên Kênh", data['video_id'], task_id, worker_id)
+    
+    
+
+def copy_videos_to_temp_folder(video_files, temp_folder):
+    # Tạo thư mục tạm nếu chưa tồn tại
+    os.makedirs(temp_folder, exist_ok=True)
+    
+    # Sao chép tất cả các video vào thư mục tạm
+    copied_videos = []
+    for video in video_files:
+        video_name = os.path.basename(video)
+        temp_video_path = os.path.join(temp_folder, video_name)
+        shutil.copy(video, temp_video_path)
+        copied_videos.append(temp_video_path)
+
+    return copied_videos
 
 
 def cread_test_reup(data, task_id, worker_id):
-    # Lấy ID video và đường dẫn tới video
     video_dir = "video"
     video_id = data.get('video_id')
     video_path = f'media/{video_id}/cache.mp4'
-    
-    # Lấy thời gian video gốc và tính toán thời gian mới sau khi thay đổi tốc độ
+
     time_video = get_video_duration(video_path)
     speed = data.get('speed_video_crop', 1.0)
     if isinstance(speed, Decimal):
         speed = float(speed)
     duration = time_video / speed  # Thời gian video sau khi thay đổi tốc độ
     video_files = [os.path.join(video_dir, f) for f in os.listdir(video_dir) if f.endswith(('.mp4', '.mkv', '.avi'))]
+    
     if not video_files:
         update_status_video(f"Render Lỗi: không có video để render ", video_id, task_id, worker_id)
         return None
 
     selected_videos = []
     total_duration = 0
-    remaining_videos = set(video_files)  # Đảm bảo không chọn lại video đã chọn
+    remaining_videos = set(video_files)
 
     while total_duration < duration and remaining_videos:
         video = random.choice(list(remaining_videos))  # Chọn ngẫu nhiên video
@@ -221,21 +233,22 @@ def cread_test_reup(data, task_id, worker_id):
         update_status_video(f"Render Lỗi: Không thể chọn đủ video để vượt qua thời lượng yêu cầu.", video_id, task_id, worker_id)
         return None
     
-    video_id = data.get('video_id')
-    
-    # Nếu tất cả video được chuyển đổi thành công
+    # Tạo thư mục tạm để sao chép video
+    temp_folder = f'media/{video_id}/temp_video_folder'
+    copied_videos = copy_videos_to_temp_folder(selected_videos, temp_folder)
+
     update_status_video("Đang Render: Đã chọn xong video nối", video_id, task_id, worker_id)
-    
+
     # Tạo tệp danh sách video để nối
     output_file_list = f'media/{video_id}/output_files.txt'
-    os.makedirs(os.path.dirname(output_file_list), exist_ok=True)  # Đảm bảo thư mục tồn tại
+    os.makedirs(os.path.dirname(output_file_list), exist_ok=True)
     
     try:
         with open(output_file_list, 'w') as f:
-            for video in selected_videos:
-                full_path = os.path.abspath(video)  # Lấy đường dẫn tuyệt đối
-                if os.path.exists(full_path):  # Kiểm tra xem file có tồn tại không
-                    f.write(f"file '{full_path}'\n")  # Ghi đúng đường dẫn tuyệt đối
+            for video in copied_videos:
+                full_path = os.path.abspath(video)
+                if os.path.exists(full_path):
+                    f.write(f"file '{full_path}'\n")
                 else:
                     print(f"Warning: Video không tồn tại - {full_path}")
     except Exception as e:
@@ -274,9 +287,10 @@ def cread_test_reup(data, task_id, worker_id):
         "-preset", "ultrafast",
         output_path
     ]
+    
     try:
         # Khởi tạo lệnh ffmpeg và đọc output
-        with subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True) as process:    
+        with subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True) as process:
             total_duration = None
             progress_bar = None
 
@@ -284,7 +298,6 @@ def cread_test_reup(data, task_id, worker_id):
             for line in process.stderr:
                 print(f"ffmpeg output: {line.strip()}")  # Log the ffmpeg output for debugging
                 if "Duration" in line:
-                    # Extract the total duration of the video
                     try:
                         duration_str = line.split(",")[0].split("Duration:")[1].strip()
                         h, m, s = map(float, duration_str.split(":"))
@@ -295,7 +308,6 @@ def cread_test_reup(data, task_id, worker_id):
                         continue
 
                 if "time=" in line and progress_bar:
-                    # Extract the current time of the video being processed
                     time_str = line.split("time=")[1].split(" ")[0].strip()
                     if time_str != 'N/A':
                         try:
@@ -309,12 +321,11 @@ def cread_test_reup(data, task_id, worker_id):
                         except ValueError as e:
                             print(f"Skipping invalid time format: {time_str}, error: {e}")
                             print(f"Lỗi khi chạy lệnh ffmpeg: {str(e)}")
-                            logging.error(f"FFmpeg Error: {str(e)}")  # Lưu lỗi vào file log
+                            logging.error(f"FFmpeg Error: {str(e)}")
             process.wait()
     except Exception as e:
-        # Xử lý lỗi ngoại lệ nếu có
         print(f"Lỗi khi chạy lệnh ffmpeg: {str(e)}")
-        logging.error(f"FFmpeg Error: {e}")  # Lưu lỗi vào file log
+        logging.error(f"FFmpeg Error: {e}")
         update_status_video(f"Render Lỗi: Lỗi khi thực hiện lệnh ffmpeg - {str(e)}", video_id, task_id, worker_id)
         return False
     

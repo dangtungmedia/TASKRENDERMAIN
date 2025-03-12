@@ -41,8 +41,8 @@ if __name__ == "__main__":
     if public_ip == "210.245.74.61":
         if local_ip:
             # Chạy Celery worker với IP local
-            os.system(f"celery -A celeryworker worker -l INFO --hostname={local_ip}//MayHuan --concurrency=5 -Q render_video_content,render_video_reupload --prefetch-multiplier=1 -O fair")
+            os.system(f"celery -A celeryworker worker -l INFO --hostname={local_ip}//MayHuan --concurrency=10 -Q render_video_content,render_video_reupload --prefetch-multiplier=1 -O fair")
     elif public_ip == "27.72.153.24":
-        os.system(f"celery -A celeryworker worker -l INFO --hostname={local_ip} --concurrency=5 -Q render_video_content,render_video_reupload --prefetch-multiplier=1 -O fair")
+        os.system(f"celery -A celeryworker worker -l INFO --hostname={local_ip} --concurrency=10 -Q render_video_content,render_video_reupload --prefetch-multiplier=1 -O fair")
     else:
-         os.system(f"celery -A celeryworker worker -l INFO --hostname={local_ip} --concurrency=5 -Q render_video_content,render_video_reupload --prefetch-multiplier=1 -O fair")
+         os.system(f"celery -A celeryworker worker -l INFO --hostname={local_ip} --concurrency=10 -Q render_video_content,render_video_reupload --prefetch-multiplier=1 -O fair")
