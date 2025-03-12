@@ -181,8 +181,7 @@ def render_video_reupload(self, data):
         shutil.rmtree(f'media/{video_id}')
         return
     shutil.rmtree(f'media/{video_id}')
-    
-    
+    update_status_video(f"Render Thành Công : Đang Chờ Upload lên Kênh", data['video_id'], task_id, worker_id)
 
 def copy_videos_to_temp_folder(video_files, temp_folder):
     # Tạo thư mục tạm nếu chưa tồn tại
@@ -443,6 +442,7 @@ def upload_video(data, task_id, worker_id):
                 url_video=url
             )
             success = True
+            
 
         except FileNotFoundError as e:
             error_msg = str(e)
