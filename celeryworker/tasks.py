@@ -183,8 +183,6 @@ def render_video_reupload(self, data):
         return
     shutil.rmtree(f'media/{video_id}')
     update_status_video(f"Render Thành Công : Đang Chờ Upload lên Kênh", data['video_id'], task_id, worker_id)
-    time.sleep(2)
-    update_status_video(f"Render Thành Công : Đang Chờ Upload lên Kênh", data['video_id'], task_id, worker_id)
 
 def copy_videos_to_temp_folder(video_files, temp_folder):
     # Tạo thư mục tạm nếu chưa tồn tại
@@ -390,65 +388,76 @@ def upload_video(data, task_id, worker_id):
                     task_id, 
                     worker_id
                 )
-    try:
-        s3 = boto3.client(
-            's3',
-            endpoint_url=os.environ.get('S3_ENDPOINT_URL'),
-            aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
-            aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY')
-        )
-        
-        bucket_name = os.environ.get('S3_BUCKET_NAME')
-        
-        if not os.path.exists(video_path):
-            error_msg = f"Không tìm thấy file {video_path}"
-            update_status_video(f"Render Lỗi : {error_msg}", video_id, task_id, worker_id)
-            return False
+    
+    max_retries = 5  # Số lần thử lại tối đa
+    attempt = 0
+    success = False
 
-        object_name = f'data/{video_id}/{name_video}.mp4'
-        # Upload file với content type và extra args
-        s3.upload_file(
-            video_path, 
-            bucket_name, 
-            object_name,
-            Callback=ProgressPercentage(video_path),
-            ExtraArgs={
-                'ContentType': 'video/mp4',
-                'ContentDisposition': 'inline'
-            }
-        )
-        
-        # Tạo URL có thời hạn 1 năm và cấu hình để xem trực tiếp
-        expiration = 365 * 24 * 60 * 60
-        url = s3.generate_presigned_url(
-            'get_object',
-            Params={
-                'Bucket': bucket_name,
-                'Key': object_name,
-                'ResponseContentType': 'video/mp4',
-                'ResponseContentDisposition': 'inline'
-            },
-            ExpiresIn=expiration
-        )
-        print(f"Uploaded video to {url}")
-        update_status_video(
-            "Đang Render : Upload file File Lên Server thành công!", 
-            video_id, 
-            task_id, 
-            worker_id,
-            url_video=url
-        )
-        return True
+    while attempt < max_retries and not success:
+        try:
+            s3 = boto3.client(
+                's3',
+                endpoint_url=os.environ.get('S3_ENDPOINT_URL'),
+                aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+                aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY')
+            )
+            
+            bucket_name = os.environ.get('S3_BUCKET_NAME')
+            
+            if not os.path.exists(video_path):
+                error_msg = f"Không tìm thấy file {video_path}"
+                update_status_video(f"Render Lỗi : {error_msg}", video_id, task_id, worker_id)
+                return False
 
-    except FileNotFoundError as e:
-        error_msg = str(e)
-        update_status_video(f"Render Lỗi : File không tồn tại - {error_msg[:20]}", video_id, task_id, worker_id)
-        return False
-        
-    except Exception as e:
-        error_msg = str(e)
-        update_status_video(f"Render Lỗi : Lỗi khi upload {error_msg[:20]}", video_id, task_id, worker_id)
-        return False
+            object_name = f'data/{video_id}/{name_video}.mp4'
+            # Upload file với content type và extra args
+            s3.upload_file(
+                video_path, 
+                bucket_name, 
+                object_name,
+                Callback=ProgressPercentage(video_path),
+                ExtraArgs={
+                    'ContentType': 'video/mp4',
+                    'ContentDisposition': 'inline'
+                }
+            )
+            
+            # Tạo URL có thời hạn 1 năm và cấu hình để xem trực tiếp
+            expiration = 365 * 24 * 60 * 60
+            url = s3.generate_presigned_url(
+                'get_object',
+                Params={
+                    'Bucket': bucket_name,
+                    'Key': object_name,
+                    'ResponseContentType': 'video/mp4',
+                    'ResponseContentDisposition': 'inline'
+                },
+                ExpiresIn=expiration
+            )
+            print(f"Uploaded video to {url}")
+            update_status_video(
+                "Đang Render : Upload file File Lên Server thành công!", 
+                video_id, 
+                task_id, 
+                worker_id,
+                url_video=url
+            )
+            success = True
+            
+
+        except FileNotFoundError as e:
+            error_msg = str(e)
+            update_status_video(f"Render Lỗi : File không tồn tại - {error_msg[:20]}", video_id, task_id, worker_id)
+            break  # Nếu file không tồn tại, dừng thử
+        except Exception as e:
+            error_msg = str(e)
+            update_status_video(f"Render Lỗi : Lỗi khi upload {error_msg[:20]}", video_id, task_id, worker_id)
+            attempt += 1
+            if attempt < max_retries:
+                # Nếu còn lượt thử lại, đợi một chút rồi thử lại
+                update_status_video(f"Render Lỗi : Thử lại lần {attempt + 1}", video_id, task_id, worker_id)
+                time.sleep(3)  # Đợi 3 giây trước khi thử lại
+    return success
 
 def create_video_file(data, task_id, worker_id):
     video_id = data.get('video_id')
