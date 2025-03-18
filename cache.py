@@ -34,12 +34,12 @@ def convert_video(file_name):
     # Lệnh FFmpeg để chuyển đổi video
     ffmpeg_command = [
         "ffmpeg",
-        "-i", input_path,  # Đường dẫn video đầu vào
+        "-i", input_path,           # Đường dẫn video đầu vào
         "-vf", f"scale={target_resolution}",  # Độ phân giải
-        "-r", str(target_fps),  # Frame rate
-        "-c:v", "libx264",  # Codec video
-        "-preset", "ultrafast",  # Chế độ mã hóa nhanh
-        output_path  # Đường dẫn lưu video sau xử lý
+        "-r", str(target_fps),      # Frame rate
+        "-c:v", "hevc_nvenc",       # Codec video H.265 NVENC
+        "-preset", "p1",            # Chế độ mã hóa nhanh nhất
+        output_path                 # Đường dẫn lưu video
     ]
 
     # Chạy FFmpeg

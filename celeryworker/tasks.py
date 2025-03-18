@@ -91,10 +91,14 @@ def clean_up_on_revoke(sender, request, terminated, signum, expired, **kw):
 
 @shared_task(bind=True, priority=0,name='render_video',time_limit=14200,queue='render_video_content')
 def render_video(self, data):
-    task_id = render_video.request.id
-    worker_id = render_video.request.hostname  # Lưu worker ID
+    task_id = self.request.id  # Sử dụng self.request thay vì render_video_reupload.request
+    worker_id = self.request.hostname 
     video_id = data.get('video_id')
-    print(data)
+    # Kiểm tra xem task có bị hủy không ngay từ đầu
+    if self.request.terminated:
+        print(f"Task {self.request.id} bị hủy.")
+        return  # Dừng task nếu bị hủy
+    
     update_status_video("Đang Render : Đang xử lý video render", data['video_id'], task_id, worker_id)
     success = create_or_reset_directory(f'media/{video_id}')
 
@@ -156,9 +160,13 @@ def render_video(self, data):
 
 @shared_task(bind=True, priority=1,name='render_video_reupload',time_limit=140000,queue='render_video_reupload')
 def render_video_reupload(self, data):
-    task_id = render_video_reupload.request.id
-    worker_id = render_video_reupload.request.hostname 
+    task_id = self.request.id  # Sử dụng self.request thay vì render_video_reupload.request
+    worker_id = self.request.hostname 
     video_id = data.get('video_id')
+    # Kiểm tra xem task có bị hủy không ngay từ đầu
+    if self.request.terminated:
+        print(f"Task {self.request.id} bị hủy.")
+        return  # Dừng task nếu bị hủy
     update_status_video("Đang Render : Đang xử lý video render", data['video_id'], task_id, worker_id)
     
     success = create_or_reset_directory(f'media/{video_id}')
@@ -196,7 +204,6 @@ def copy_videos_to_temp_folder(video_files, temp_folder):
         copied_videos.append(temp_video_path)
 
     return copied_videos
-
 
 def cread_test_reup(data, task_id, worker_id):
     video_dir = "video"
@@ -281,9 +288,9 @@ def cread_test_reup(data, task_id, worker_id):
         ),
         "-map", "[outv]",
         "-map", "[a]",
-        "-c:v", "libx264",
+        "-c:v", "hevc_nvenc",
         "-c:a", "aac",
-        "-preset", "ultrafast",
+        "-preset", "p1",
         output_path
     ]
     
@@ -457,8 +464,6 @@ def upload_video(data, task_id, worker_id):
                 update_status_video(f"Render Lỗi : Thử lại lần {attempt + 1}", video_id, task_id, worker_id)
                 time.sleep(3)  # Đợi 3 giây trước khi thử lại
     return success
-
-
 
 def create_video_file(data, task_id, worker_id):
     video_id = data.get('video_id')
@@ -2041,7 +2046,49 @@ def get_video_info(data,task_id,worker_id):
         print(f"Phương thức 1 thất bại: {str(e)}")
         update_status_video(f"Đang Render: Phương thức download 1 thất bại", video_id, task_id, worker_id)  
         
-    # Phương thức 2: Sử dụng yt-dlp
+        
+    # Thử phương thức 1: Sử dụng API
+    try:
+        api_url = "https://opendown.net/proxy.php"
+        form_data = {"url": video_url}
+        response = requests.post(api_url, data=form_data, timeout=10)
+        api_data = response.json()
+        
+        if "api" not in api_data or "mediaItems" not in api_data["api"]:
+            raise ValueError("Invalid API response format")
+            
+        title = api_data["api"]["title"]
+        media_preview_url = api_data["api"]["previewUrl"]
+        
+        # Tải video với cập nhật % tải
+        with requests.get(media_preview_url, stream=True) as response:
+            total_size = int(response.headers.get('content-length', 0))
+            chunk_size = 8192
+            downloaded_size = 0
+
+            with open(output_file, "wb") as file:
+                for chunk in response.iter_content(chunk_size=chunk_size):
+                    if chunk:
+                        file.write(chunk)
+                        downloaded_size += len(chunk)
+
+                        # Tính % tải và cập nhật trạng thái
+                        percent_complete = (downloaded_size / total_size) * 100
+                        update_status_video(
+                            f"Đang Render: Đang tải video {percent_complete:.2f}%",
+                            video_id,
+                            task_id,
+                            worker_id
+                        )
+        update_status_video(f"Đang Render: Đã tải xong video", video_id, task_id, worker_id)
+        return {"title": title}
+        
+    except (requests.RequestException, ValueError, KeyError, IOError) as e:
+        print(f"Phương thức 2 thất bại: {str(e)}")
+        update_status_video(f"Đang Render: Phương thức download 2 thất bại", video_id, task_id, worker_id)  
+        
+        
+    # Phương thức 3: Sử dụng yt-dlp
     try:
         url = data.get('url_video_youtube')
         if not url:
@@ -2049,8 +2096,6 @@ def get_video_info(data,task_id,worker_id):
             
         max_retries = 4
         retry_delay = 1
-        proxy_url = os.environ.get('PROXY_URL')
-        
         ydl_opts = {
             'format': 'bestvideo[height=720]+bestaudio/best',
             'outtmpl': output_file,
@@ -2095,6 +2140,7 @@ def get_video_info(data,task_id,worker_id):
         print(f"Lỗi không xác định trong quá trình xử lý: {str(e)}")
         update_status_video(f"Render Lỗi: Phương thức download youtube thất bại",video_id, task_id, worker_id)
         return None
+    
     
 def update_info_video(data, task_id, worker_id):
     try:
@@ -2176,63 +2222,75 @@ def get_youtube_thumbnail(youtube_url, video_id):
         # Đường dẫn thư mục lưu ảnh
         save_dir = os.path.join('media', video_id, 'thumbnail')
 
+        # Thử tối đa 5 lần nếu có lỗi
+        max_retries = 5
+
         for quality, url in thumbnails.items():
-            try:
-                response = requests.get(url, stream=True, timeout=5)
+            attempt = 0
+            while attempt < max_retries:
+                try:
+                    response = requests.get(url, stream=True, timeout=5)
 
-                if response.status_code == 200:
-                    # Nếu tải thành công, tạo thư mục lưu ảnh nếu chưa có
-                    os.makedirs(save_dir, exist_ok=True)
-                    file_path = os.path.join(save_dir, f"{video_id_youtube}_{quality}.jpg")
+                    if response.status_code == 200:
+                        # Nếu tải thành công, tạo thư mục lưu ảnh nếu chưa có
+                        os.makedirs(save_dir, exist_ok=True)
+                        file_path = os.path.join(save_dir, f"{video_id_youtube}_{quality}.jpg")
 
-                    # Lưu ảnh vào máy
-                    with open(file_path, 'wb') as file:
-                        for chunk in response.iter_content(1024):
-                            file.write(chunk)
+                        # Lưu ảnh vào máy
+                        with open(file_path, 'wb') as file:
+                            for chunk in response.iter_content(1024):
+                                file.write(chunk)
 
-                    print(f"✅ Tải thành công: {file_path}")
+                        print(f"✅ Tải thành công: {file_path}")
 
-                    # Kiểm tra nếu ảnh tồn tại thì mới upload lên S3
-                    if os.path.exists(file_path):
-                        s3 = boto3.client(
-                            's3',
-                            endpoint_url=os.getenv('S3_ENDPOINT_URL'),
-                            aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-                            aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
-                        )
+                        # Kiểm tra nếu ảnh tồn tại thì mới upload lên S3
+                        if os.path.exists(file_path):
+                            s3 = boto3.client(
+                                's3',
+                                endpoint_url=os.getenv('S3_ENDPOINT_URL'),
+                                aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+                                aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
+                            )
 
-                        bucket_name = os.getenv('S3_BUCKET_NAME')
-                        object_name = f"data/{video_id}/thumbnail/{video_id_youtube}_{quality}.jpg"
+                            bucket_name = os.getenv('S3_BUCKET_NAME')
+                            object_name = f"data/{video_id}/thumbnail/{video_id_youtube}_{quality}.jpg"
 
-                        # Upload ảnh lên S3
-                        s3.upload_file(
-                            file_path,
-                            bucket_name,
-                            object_name,
-                            ExtraArgs={
-                                'ContentType': 'image/jpeg',
-                                'ContentDisposition': 'inline'
-                            }
-                        )
+                            # Upload ảnh lên S3
+                            s3.upload_file(
+                                file_path,
+                                bucket_name,
+                                object_name,
+                                ExtraArgs={
+                                    'ContentType': 'image/jpeg',
+                                    'ContentDisposition': 'inline'
+                                }
+                            )
 
-                        # Tạo URL có thời hạn 1 năm
-                        expiration = 365 * 24 * 60 * 60
-                        s3_url = s3.generate_presigned_url(
-                            'get_object',
-                            Params={
-                                'Bucket': bucket_name,
-                                'Key': object_name,
-                                'ResponseContentType': 'image/jpeg',
-                                'ResponseContentDisposition': 'inline'
-                            },
-                            ExpiresIn=expiration
-                        )
+                            # Tạo URL có thời hạn 1 năm
+                            expiration = 365 * 24 * 60 * 60
+                            s3_url = s3.generate_presigned_url(
+                                'get_object',
+                                Params={
+                                    'Bucket': bucket_name,
+                                    'Key': object_name,
+                                    'ResponseContentType': 'image/jpeg',
+                                    'ResponseContentDisposition': 'inline'
+                                },
+                                ExpiresIn=expiration
+                            )
 
-                        return s3_url  # Trả về URL của ảnh đã upload thành công
+                            return s3_url  # Trả về URL của ảnh đã upload thành công
+                        return False  # Đảm bảo nếu có lỗi vẫn quay lại False
 
-            except requests.exceptions.RequestException as e:
-                print(f"❌ Lỗi khi tải ảnh {url}: {e}")
-                break  # Thay vì `continue`, dừng vòng lặp khi có lỗi
+                except requests.exceptions.RequestException as e:
+                    attempt += 1
+                    print(f"❌ Lỗi khi tải ảnh {url}, lần thử {attempt}/{max_retries}: {e}")
+                    if attempt >= max_retries:
+                        print(f"❌ Không thể tải ảnh sau {max_retries} lần thử. Dừng việc tải và upload.")
+                        return False  # Không tải lên S3 nếu đã thử quá 5 lần
+                    else:
+                        # Nếu còn lần thử, đợi một thời gian rồi thử lại
+                        time.sleep(2)  # Thử lại sau 2 giây
 
         return False  # Không tìm thấy thumbnail hợp lệ
 
