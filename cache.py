@@ -51,7 +51,7 @@ def convert_video(file_name):
 
 # Sử dụng multiprocessing để xử lý song song nhiều video
 if __name__ == "__main__":
-    num_workers = 8
+    num_workers = 50
     with Pool(num_workers) as pool:
         pool.map(convert_video, video_files)
 
