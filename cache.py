@@ -38,7 +38,6 @@ def convert_video(file_name):
         "-vf", f"scale={target_resolution}",  # Độ phân giải
         "-r", str(target_fps),      # Frame rate
         "-c:v", "hevc_nvenc",       # Codec video H.265 NVENC
-        "-preset", "p1",            # Chế độ mã hóa nhanh nhất
         output_path                 # Đường dẫn lưu video
     ]
     # Chạy FFmpeg
