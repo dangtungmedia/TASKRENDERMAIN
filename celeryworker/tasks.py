@@ -95,9 +95,6 @@ def render_video(self, data):
     worker_id = self.request.hostname 
     video_id = data.get('video_id')
     # Kiểm tra xem task có bị hủy không ngay từ đầu
-    if self.request.terminated:
-        print(f"Task {self.request.id} bị hủy.")
-        return  # Dừng task nếu bị hủy
     
     update_status_video("Đang Render : Đang xử lý video render", data['video_id'], task_id, worker_id)
     success = create_or_reset_directory(f'media/{video_id}')
@@ -164,9 +161,6 @@ def render_video_reupload(self, data):
     worker_id = self.request.hostname 
     video_id = data.get('video_id')
     # Kiểm tra xem task có bị hủy không ngay từ đầu
-    if self.request.terminated:
-        print(f"Task {self.request.id} bị hủy.")
-        return  # Dừng task nếu bị hủy
     update_status_video("Đang Render : Đang xử lý video render", data['video_id'], task_id, worker_id)
     
     success = create_or_reset_directory(f'media/{video_id}')
