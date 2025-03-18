@@ -41,7 +41,6 @@ def convert_video(file_name):
         "-preset", "p1",            # Chế độ mã hóa nhanh nhất
         output_path                 # Đường dẫn lưu video
     ]
-
     # Chạy FFmpeg
     subprocess.run(ffmpeg_command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -51,7 +50,7 @@ def convert_video(file_name):
 
 # Sử dụng multiprocessing để xử lý song song nhiều video
 if __name__ == "__main__":
-    num_workers = 50
+    num_workers = 8
     with Pool(num_workers) as pool:
         pool.map(convert_video, video_files)
 
