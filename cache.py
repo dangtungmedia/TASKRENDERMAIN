@@ -38,6 +38,7 @@ def convert_video(file_name):
         "-vf", f"scale={target_resolution}",  # Độ phân giải
         "-r", str(target_fps),      # Frame rate
         "-c:v", "hevc_nvenc",       # Codec video H.265 NVENC
+        "-preset", "fast",            # Chế độ mã hóa nhanh nhất
         output_path                 # Đường dẫn lưu video
     ]
     # Chạy FFmpeg
@@ -58,3 +59,6 @@ if __name__ == "__main__":
     print("📂 Đã xóa thư mục 'chace_video' sau khi hoàn tất.")
 
     print("🎉 Hoàn thành quá trình chuyển đổi video với multiprocessing!")
+    
+    
+    
