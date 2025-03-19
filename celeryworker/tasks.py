@@ -484,19 +484,19 @@ def create_video_file(data, task_id, worker_id):
         print(f"Audio file not found: {audio_file}")
         return False
     ffmpeg_command = [
-            'ffmpeg',
-            '-f', 'concat',
-            '-safe', '0',
-            '-i', input_files_video_path,
-            '-i', audio_file,
-            '-vf', f"subtitles={ass_file_path}",
-            '-c:v', 'libx264',
-            '-map', '0:v',
-            '-map', '1:a',
-            '-y',
-            f"media/{video_id}/{name_video}.mp4"
-        ]
-    
+        'ffmpeg',
+        '-f', 'concat',                # Chế độ kết hợp video
+        '-safe', '0',                   # Cho phép đường dẫn không an toàn (chẳng hạn như file với đường dẫn tuyệt đối)
+        '-i', input_files_video_path,   # Đường dẫn tệp video đầu vào (danh sách video)
+        '-i', audio_file,               # Đường dẫn tệp âm thanh đầu vào
+        '-vf', f"subtitles={ass_file_path}",  # Đường dẫn tệp phụ đề ASS
+        '-c:v', 'hevc_nvenc',           # Sử dụng codec H.265 NVENC (xử lý phần cứng NVIDIA)
+        '-preset', 'fast',              # Chế độ mã hóa nhanh
+        '-map', '0:v',                  # Lấy video từ input đầu tiên
+        '-map', '1:a',                  # Lấy audio từ input thứ hai (audio_file)
+        '-y',                           # Ghi đè file đầu ra nếu đã tồn tại
+        f"media/{video_id}/{name_video}.mp4"  # Đường dẫn và tên file đầu ra
+    ]
     with subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True) as process:
         for line in process.stderr:
             if "time=" in line:
@@ -1015,17 +1015,17 @@ def process_video_segment(data, text_entry, data_sub, i, video_id, task_id, work
                 else:
                     cmd = [
                         "ffmpeg",
-                        "-i", cache_file,
-                        "-t", str(duration),     # Thời gian video cần cắt
-                        "-r", "24",              # Tốc độ khung hình đầu ra
-                        "-c:v", "libx264",       # Codec video
-                        "-crf", "23",            # Chất lượng video
-                        "-preset", "ultrafast",     # Tốc độ mã hóa
-                        "-pix_fmt", "yuv420p",   # Đảm bảo tương thích với đầu ra
-                        "-vsync", "1",           # Đồng bộ hóa video
-                        "-loglevel", "debug",    # Đặt mức log level để ghi chi tiết
-                        "-y",                    # Ghi đè file đầu ra nếu đã tồn tại
-                        out_file
+                        "-i", cache_file,               # Đầu vào (cache_file)
+                        "-t", str(duration),            # Thời gian video cần cắt
+                        "-r", "24",                     # Tốc độ khung hình đầu ra
+                        "-c:v", "hevc_nvenc",           # Codec video H.265 NVENC
+                        "-preset", "fast",              # Chế độ mã hóa nhanh nhất
+                        "-pix_fmt", "yuv420p",          # Đảm bảo tương thích với đầu ra
+                        "-crf", "23",                   # Chất lượng video
+                        "-vsync", "1",                  # Đồng bộ hóa video
+                        "-loglevel", "debug",           # Mức độ log để ghi chi tiết
+                        "-y",                           # Ghi đè file đầu ra nếu đã tồn tại
+                        out_file                        # Đầu ra (out_file)
                     ]
                 try:
                     # Chạy lệnh FFmpeg
