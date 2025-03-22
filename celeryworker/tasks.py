@@ -36,6 +36,14 @@ import threading
 from threading import Lock
 import logging
 
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+from googleapiclient.errors import HttpError
+from urllib.parse import urlparse
 from time import sleep
 # Nạp biến môi trường từ file .env
 load_dotenv()
@@ -199,6 +207,12 @@ def copy_videos_to_temp_folder(video_files, temp_folder):
 
     return copied_videos
 
+def seconds_to_hms(seconds):
+    hours = seconds // 3600  # Tính giờ
+    minutes = (seconds % 3600) // 60  # Tính phút
+    seconds = seconds % 60  # Tính giây
+    return f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}"  # Định dạng: HH:MM:SS
+
 def cread_test_reup(data, task_id, worker_id):
     video_dir = "video"
     video_id = data.get('video_id')
@@ -218,6 +232,7 @@ def cread_test_reup(data, task_id, worker_id):
     selected_videos = []
     total_duration = 0
     remaining_videos = set(video_files)
+    update_status_video("Đang Render: Đang Chọn video random", video_id, task_id, worker_id)
 
     while total_duration < duration and remaining_videos:
         video = random.choice(list(remaining_videos))  # Chọn ngẫu nhiên video
@@ -226,19 +241,24 @@ def cread_test_reup(data, task_id, worker_id):
             video_duration = get_video_duration(video)
             selected_videos.append(video)
             total_duration += video_duration
+            # Chuyển đổi tổng thời gian từ giây thành giờ:phút:giây
+            formatted_duration = seconds_to_hms(total_duration)
+            formatted_limit = seconds_to_hms(duration)
+            update_status_video(f"Đang Render: Thời lượng videos {formatted_duration}/{formatted_limit}", video_id, task_id, worker_id)
         except Exception as e:
             print(f"Lỗi khi đọc thời gian video {video}: {e}")
 
     if total_duration < duration:
         update_status_video(f"Render Lỗi: Không thể chọn đủ video để vượt qua thời lượng yêu cầu.", video_id, task_id, worker_id)
         return None
-    
+    update_status_video("Đang Render: Đã chọn xong video nối", video_id, task_id, worker_id)
     # Tạo thư mục tạm để sao chép video
     temp_folder = f'media/{video_id}/temp_video_folder'
+    update_status_video("Đang Render: Đang Coppy file tránh lỗi", video_id, task_id, worker_id)
     copied_videos = copy_videos_to_temp_folder(selected_videos, temp_folder)
-
-    update_status_video("Đang Render: Đã chọn xong video nối", video_id, task_id, worker_id)
-
+    
+    update_status_video("Đang Render: Đang Coppy xong videos chuẩn bị xuất video hoàn thành", video_id, task_id, worker_id)
+    
     # Tạo tệp danh sách video để nối
     output_file_list = f'media/{video_id}/output_files.txt'
     os.makedirs(os.path.dirname(output_file_list), exist_ok=True)
@@ -362,102 +382,107 @@ def select_videos_by_total_duration(file_path, min_duration):
     
     return selected_urls
 
+def authenticate():
+    """Xác thực với Google Drive API và lấy credentials"""
+    creds = None
+    SCOPES = ["https://www.googleapis.com/auth/drive"]
+    # Kiểm tra file token.json để lấy thông tin xác thực
+    if os.path.exists("token.json"):
+        try:
+            creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+        except:
+            return None
+    # Nếu không có creds hợp lệ, thực hiện xác thực
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
+            creds = flow.run_local_server(port=0)
+            # Lưu credentials để dùng lại
+            with open("token.json", "w") as token:
+                token.write(creds.to_json())
+    return creds
+
 def upload_video(data, task_id, worker_id):
     video_id = data.get('video_id')
     name_video = data.get('name_video')
     video_path = f'media/{video_id}/{name_video}.mp4'
     update_status_video(f"Đang Render : Đang Upload File Lên Server", video_id, task_id, worker_id)
     
-    class ProgressPercentage(object):
-        def __init__(self, filename):
-            self._filename = filename
-            self._size = float(os.path.getsize(filename))
-            self._seen_so_far = 0
-            self._lock = threading.Lock()
-
-        def __call__(self, bytes_amount):
-            with self._lock:
-                self._seen_so_far += bytes_amount
-                percentage = (self._seen_so_far / self._size) * 100
-                # Format size thành MB
-                total_mb = self._size / (1024 * 1024)
-                uploaded_mb = self._seen_so_far / (1024 * 1024)
-                update_status_video(
-                    f"Đang Render : Đang Upload File Lên Server ({percentage:.1f}%) - {uploaded_mb:.1f}MB/{total_mb:.1f}MB", 
-                    video_id, 
-                    task_id, 
-                    worker_id
-                )
+    creds = authenticate()
     
-    max_retries = 5  # Số lần thử lại tối đa
-    attempt = 0
-    success = False
-
-    while attempt < max_retries and not success:
+    if creds:
         try:
-            s3 = boto3.client(
-                's3',
-                endpoint_url=os.environ.get('S3_ENDPOINT_URL'),
-                aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
-                aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY')
-            )
-            
-            bucket_name = os.environ.get('S3_BUCKET_NAME')
-            
-            if not os.path.exists(video_path):
-                error_msg = f"Không tìm thấy file {video_path}"
-                update_status_video(f"Render Lỗi : {error_msg}", video_id, task_id, worker_id)
-                return False
+            service = build("drive", "v3", credentials=creds)
 
-            object_name = f'data/{video_id}/{name_video}.mp4'
-            # Upload file với content type và extra args
-            s3.upload_file(
+            # Định nghĩa metadata cho file
+            file_metadata = {
+                "name": os.path.basename(video_path),
+                "parents": ["1apzRBnKoOMKRPFq4dEu0DuYkaxQTxVGY"]  # ID thư mục trên Google Drive
+            }
+
+            # Tạo đối tượng MediaFileUpload và chỉ định callback
+            media = MediaFileUpload(
                 video_path, 
-                bucket_name, 
-                object_name,
-                Callback=ProgressPercentage(video_path),
-                ExtraArgs={
-                    'ContentType': 'video/mp4',
-                    'ContentDisposition': 'inline'
-                }
+                mimetype="application/octet-stream", 
+                chunksize=1024*1024,  # Dữ liệu upload theo từng chunk 1MB
+                resumable=True
             )
-            
-            # Tạo URL có thời hạn 1 năm và cấu hình để xem trực tiếp
-            expiration = 365 * 24 * 60 * 60
-            url = s3.generate_presigned_url(
-                'get_object',
-                Params={
-                    'Bucket': bucket_name,
-                    'Key': object_name,
-                    'ResponseContentType': 'video/mp4',
-                    'ResponseContentDisposition': 'inline'
-                },
-                ExpiresIn=expiration
+
+            # Upload file với callback
+            request = service.files().create(
+                body=file_metadata, 
+                media_body=media, 
+                fields="id, webViewLink"
             )
-            print(f"Uploaded video to {url}")
+
+            response = None
+            while response is None:
+                status, response = request.next_chunk()
+                if status:
+                    # Tính toán tiến độ tải lên
+                    uploaded_mb = status.progress() * (os.path.getsize(video_path) / (1024 * 1024))  # Kích thước đã tải lên tính bằng MB
+                    total_mb = os.path.getsize(video_path) / (1024 * 1024)  # Tổng kích thước file tính bằng MB
+                    update_status_video(
+                        f"Đang Render : Đang Upload File Lên Server ({status.progress() * 100:.2f}%) - {uploaded_mb:.1f}MB/{total_mb:.1f}MB", 
+                        video_id, 
+                        task_id, 
+                        worker_id
+                    )
+                    
+            # Sau khi upload xong
+            url = response.get('webViewLink')
+            file_id = response.get('id')
+            permissions = {
+                'type': 'anyone',
+                'role': 'reader',  # Quyền đọc
+            }
+            # Tạo quyền truy cập chia sẻ cho file
+            service.permissions().create(
+                fileId=file_id,
+                body=permissions
+            ).execute()
+                
             update_status_video(
                 "Đang Render : Upload file File Lên Server thành công!", 
                 video_id, 
                 task_id, 
                 worker_id,
-                url_video=url
+                url_video=url,
+                id_video_google=file_id
             )
-            success = True
-            
-
-        except FileNotFoundError as e:
-            error_msg = str(e)
-            update_status_video(f"Render Lỗi : File không tồn tại - {error_msg[:20]}", video_id, task_id, worker_id)
-            break  # Nếu file không tồn tại, dừng thử
+            logging.info(f"File uploaded successfully: {url}")
+            return True
+        
         except Exception as e:
-            error_msg = str(e)
-            update_status_video(f"Render Lỗi : Lỗi khi upload {error_msg[:20]}", video_id, task_id, worker_id)
-            attempt += 1
-            if attempt < max_retries:
-                # Nếu còn lượt thử lại, đợi một chút rồi thử lại
-                update_status_video(f"Render Lỗi : Thử lại lần {attempt + 1}", video_id, task_id, worker_id)
-                time.sleep(3)  # Đợi 3 giây trước khi thử lại
-    return success
+            update_status_video(f"Render Lỗi : Lỗi khi upload file: {str(e)}", video_id, task_id, worker_id)
+            logging.error(f"Error during file upload: {str(e)}")
+            return False
+    else:
+        update_status_video(f"Render Lỗi : Google API credentials error", video_id, task_id, worker_id)
+        logging.error("Google API credentials error")
+        return False
 
 def create_video_file(data, task_id, worker_id):
     video_id = data.get('video_id')
@@ -1097,7 +1122,7 @@ def get_random_video_from_directory(directory_path):
 def get_voice_super_voice(data, text, file_name):     
     success = False
     attempt = 0
-    while not success and attempt < 200:
+    while not success and attempt < 15:
         try:
             url_voice_text = get_voice_text(text, data)
             if not url_voice_text:
@@ -1405,7 +1430,7 @@ def download_audio(data, task_id, worker_id):
         processed_entries = 0
 
         # Khởi tạo luồng xử lý tối đa 20 luồng
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        with ThreadPoolExecutor(max_workers=2) as executor:
             futures = {
                 executor.submit(process_voice_entry, data, text_entry, video_id, task_id, worker_id, language): idx
                 for idx, text_entry in enumerate(text_entries)
@@ -1763,7 +1788,6 @@ def download_single_image(url, local_directory):
             print(f"Lỗi yêu cầu khi tải xuống {url}: {e}")
         except Exception as e:
             print(f"Lỗi không xác định khi tải xuống {url}: {e}")
-        
         time.sleep(4)  # Đợi 1 giây trước khi thử lại
     return False  # Trả về False nếu không thể tải xuống
 
@@ -1789,7 +1813,12 @@ def download_image(data, task_id, worker_id):
                         video_id, task_id, worker_id
                     )
             return False
-        images.append(iteam.get('url_video'))
+        parsed_url = urlparse(iteam.get('url_video'))
+        if parsed_url.scheme in ['http', 'https']:
+            images.append(iteam.get('url_video'))
+        else:
+            url  =os.getenv('url_web') + iteam.get('url_video')
+            images.append(url)
             
     print(f"Số lượng hình ảnh cần tải: {len(images)}")
     total_images = len(images)  # Tổng số hình ảnh cần tải
@@ -2134,8 +2163,7 @@ def get_video_info(data,task_id,worker_id):
         print(f"Lỗi không xác định trong quá trình xử lý: {str(e)}")
         update_status_video(f"Render Lỗi: Phương thức download youtube thất bại",video_id, task_id, worker_id)
         return None
-    
-    
+       
 def update_info_video(data, task_id, worker_id):
     try:
         video_url = data.get('url_video_youtube')
@@ -2154,14 +2182,13 @@ def update_info_video(data, task_id, worker_id):
             return False
         
         
-        url_thumnail = get_youtube_thumbnail(video_url,video_id)
-        if not url_thumnail:
+        thumnail = get_youtube_thumbnail(video_url,video_id)
+        if not thumnail:
             update_status_video(f"Render Lỗi: lỗi lấy ảnh thumbnail", 
                           data.get('video_id'), task_id, worker_id)
             return False
-
         update_status_video("Đang Render : Đã lấy thành công thông tin video reup", 
-                          video_id, task_id, worker_id,url_thumbnail=url_thumnail,title=result["title"])
+                          video_id, task_id, worker_id,url_thumnail=thumnail,title=result["title"])
         return True
 
     except requests.RequestException as e:
@@ -2234,47 +2261,8 @@ def get_youtube_thumbnail(youtube_url, video_id):
                         with open(file_path, 'wb') as file:
                             for chunk in response.iter_content(1024):
                                 file.write(chunk)
-
                         print(f"✅ Tải thành công: {file_path}")
-
-                        # Kiểm tra nếu ảnh tồn tại thì mới upload lên S3
-                        if os.path.exists(file_path):
-                            s3 = boto3.client(
-                                's3',
-                                endpoint_url=os.getenv('S3_ENDPOINT_URL'),
-                                aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-                                aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
-                            )
-
-                            bucket_name = os.getenv('S3_BUCKET_NAME')
-                            object_name = f"data/{video_id}/thumbnail/{video_id_youtube}_{quality}.jpg"
-
-                            # Upload ảnh lên S3
-                            s3.upload_file(
-                                file_path,
-                                bucket_name,
-                                object_name,
-                                ExtraArgs={
-                                    'ContentType': 'image/jpeg',
-                                    'ContentDisposition': 'inline'
-                                }
-                            )
-
-                            # Tạo URL có thời hạn 1 năm
-                            expiration = 365 * 24 * 60 * 60
-                            s3_url = s3.generate_presigned_url(
-                                'get_object',
-                                Params={
-                                    'Bucket': bucket_name,
-                                    'Key': object_name,
-                                    'ResponseContentType': 'image/jpeg',
-                                    'ResponseContentDisposition': 'inline'
-                                },
-                                ExpiresIn=expiration
-                            )
-
-                            return s3_url  # Trả về URL của ảnh đã upload thành công
-                        return False  # Đảm bảo nếu có lỗi vẫn quay lại False
+                        return file_path  # Đảm bảo nếu có lỗi vẫn quay lại False
 
                 except requests.exceptions.RequestException as e:
                     attempt += 1
@@ -2292,6 +2280,7 @@ def get_youtube_thumbnail(youtube_url, video_id):
         print(f"❌ Lỗi không xác định: {e}")
         return False
 
+
 class HttpClient:
     def __init__(self, url, min_delay=1.0):
         self.url = url  # Endpoint API URL
@@ -2305,6 +2294,7 @@ class HttpClient:
             "Đang Render : Upload file File Lên Server thành công!",
             "Đang Render : Đang xử lý video render",
             "Đang Render : Đã lấy thành công thông tin video reup",
+            "Đang Render : Đã chọn xong video nối",
             "Render Lỗi"
         ]
         self.logger = self._setup_logger()
@@ -2327,8 +2317,10 @@ class HttpClient:
         # Apply rate limiting for other statuses
         return time_since_last >= self.min_delay
         
-    def send(self, data, max_retries=3):
-        """Send data through HTTP request with rate limiting and retries"""
+    def send(self, data, file_data=None, max_retries=3):
+        """Send data through HTTP request with rate limiting and retries.
+        file_data is expected to be a dictionary with key as field name and value as file object (e.g. open('file_path', 'rb'))."""
+
         with self.lock:
             try:
                 status = data.get('status')
@@ -2338,9 +2330,12 @@ class HttpClient:
                     
                 for attempt in range(max_retries):
                     try:
-                        # Gửi HTTP POST request đến self.url
-                        response = requests.post(self.url, json=data, timeout=10)
-                        
+                        if file_data:
+                            # Gửi HTTP POST request với form data và file
+                            response = requests.post(self.url, data=data, files=file_data, timeout=10)
+                        else:
+                            response = requests.post(self.url, json=data,timeout=10)
+
                         # Kiểm tra phản hồi
                         if response.status_code == 200:
                             self.last_send_time = time.time()
@@ -2354,8 +2349,8 @@ class HttpClient:
                     except requests.RequestException as e:
                         self.logger.error(f"Request failed: {str(e)}")
                         
-                    # Delay trước khi thử lại
-                    sleep_time = min(2 * attempt + 1, 10)
+                    # Exponential backoff for retry delay
+                    sleep_time = min(2 ** attempt, 10)  # Exponential backoff
                     time.sleep(sleep_time)
                 
                 self.logger.error(f"Failed to send after {max_retries} attempts")
@@ -2365,18 +2360,26 @@ class HttpClient:
                 self.logger.error(f"Error in send method: {str(e)}")
                 return False
 
-http_client = HttpClient(url="https://autospamnews.com/api/")
-def update_status_video(status_video, video_id, task_id, worker_id,url_thumbnail=None, url_video=None,title=None):
+http_client = HttpClient(url=os.getenv('url_web') + "/api/")
+def update_status_video(status_video, video_id, task_id, worker_id, url_thumnail=None, url_video=None, title=None, id_video_google=None):
     data = {
         'action': 'update_status',
         'video_id': video_id,
         'status': status_video,
         'task_id': task_id,
         'worker_id': worker_id,
-        "url_thumbnail":url_thumbnail,
         'title': remove_invalid_chars(title),
         'url_video': url_video,
+        'id_video_google': id_video_google,
         "secret_key": "ugz6iXZ.fM8+9sS}uleGtIb,wuQN^1J%EvnMBeW5#+CYX_ej&%"
     }
-    http_client.send(data)
-
+    
+    if url_thumnail:
+        try:
+            with open(url_thumnail, 'rb') as f:
+                data_file = {'thumnail': f}  # Correct key to 'thumbnail'
+                http_client.send(data, file_data=data_file)
+        except FileNotFoundError:
+            logging.error(f"File not found: {url_thumnail}")
+    else:
+        http_client.send(data)
