@@ -133,13 +133,13 @@ def render_video(self, data):
     # Tạo video
     success = create_video_lines(data, task_id, worker_id)
     if not success:
-        # shutil.rmtree(f'media/{video_id}')
+        shutil.rmtree(f'media/{video_id}')
         return
     
     # Tạo phụ đề cho video
     success = create_subtitles(data, task_id, worker_id)
     if not success:
-        # shutil.rmtree(f'media/{video_id}')
+        shutil.rmtree(f'media/{video_id}')
         return
     
     # Tạo file
@@ -1362,53 +1362,44 @@ def download_audio(data, task_id, worker_id):
         # Tạo thư mục nếu chưa tồn tại
         os.makedirs(f'media/{video_id}/voice', exist_ok=True)
 
+        os.makedirs(f'media/{video_id}/voice', exist_ok=True)
+
         # Danh sách giữ đường dẫn tệp theo thứ tự
         result_files = [None] * total_entries
         processed_entries = 0
 
-        # Khởi tạo luồng xử lý tối đa 20 luồng
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = {
-                executor.submit(process_voice_entry, data, text_entry, video_id, task_id, worker_id, language): idx
-                for idx, text_entry in enumerate(text_entries)
-            }
-            # Mở file để ghi các đường dẫn tệp âm thanh theo thứ tự
-            with open(f'media/{video_id}/input_files.txt', 'w') as file:
-                for future in as_completed(futures):
-                    idx = futures[future]
-                    try:
-                        result = future.result()  # Lấy kết quả từ công việc hoàn thành
-                        if result[0] is False:  # Nếu có lỗi trong quá trình tải
-                            print("Lỗi khi tải giọng nói, dừng toàn bộ tiến trình.")
-                            update_status_video(f"Render Lỗi : {os.getenv('name_woker')}  Lỗi khi tải giọng nói, dừng toàn bộ tiến trình.", data['video_id'], task_id, worker_id)
-                            # Hủy tất cả các công việc chưa hoàn thành
-                            for f in futures.keys():
-                                f.cancel()
-                            return False
-                        entry_id, file_name = result
-                        result_files[idx] = file_name  # Đảm bảo thứ tự cho file_name
-                        processed_entries += 1
-                        percent_complete = (processed_entries / total_entries) * 100
-                        update_status_video(
-                            f"Đang Render : Đang tạo giọng đọc ({processed_entries} /{total_entries}) {percent_complete:.2f}%",
-                            video_id, task_id, worker_id
-                        )
-                    except Exception as e:
-                        print(f"Lỗi khi xử lý giọng đọc cho đoạn văn bản {text_entries[idx]['id']}: {e}")
-                        update_status_video(
-                            f"Render Lỗi :  {os.getenv('name_woker')} Lỗi khi tạo giọng đọc - {e}",
-                            video_id, task_id, worker_id
-                        )
-                        # Hủy tất cả các công việc chưa hoàn thành
-                        for f in futures.keys():
-                            f.cancel()
-                        update_status_video(f"Render Lỗi : {os.getenv('name_woker')}  Không thể tải xuống âm thanh", data['video_id'], task_id, worker_id)
-                        return False  # Dừng toàn bộ nếu gặp lỗi
-                # Ghi vào input_files.txt theo đúng thứ tự ban đầu của text_entries
-                for file_name in result_files:
-                    if file_name:
-                        file.write(f"file 'voice/{os.path.basename(file_name)}'\n")
-        time.sleep(1)
+        # Xử lý từng đoạn văn bản một theo thứ tự
+        for idx, text_entry in enumerate(text_entries):
+            try:
+                result = process_voice_entry(data, text_entry, video_id, task_id, worker_id, language)  # Gọi trực tiếp hàm xử lý cho mỗi entry
+                if result[0] is False:  # Nếu có lỗi trong quá trình tải
+                    print("Lỗi khi tải giọng nói, dừng toàn bộ tiến trình.")
+                    update_status_video(f"Render Lỗi : {os.getenv('name_woker')}  Lỗi khi tải giọng nói, dừng toàn bộ tiến trình.", data['video_id'], task_id, worker_id)
+                    return False  # Dừng lại nếu có lỗi
+
+                entry_id, file_name = result
+                result_files[idx] = file_name  # Đảm bảo thứ tự cho file_name
+                processed_entries += 1
+                percent_complete = (processed_entries / total_entries) * 100
+                update_status_video(
+                    f"Đang Render : Đang tạo giọng đọc ({processed_entries} /{total_entries}) {percent_complete:.2f}%",
+                    video_id, task_id, worker_id
+                )
+
+            except Exception as e:
+                print(f"Lỗi khi xử lý giọng đọc cho đoạn văn bản {text_entries[idx]['id']}: {e}")
+                update_status_video(
+                    f"Render Lỗi :  {os.getenv('name_woker')} Lỗi khi tạo giọng đọc - {e}",
+                    video_id, task_id, worker_id
+                )
+                update_status_video(f"Render Lỗi : {os.getenv('name_woker')}  Không thể tải xuống âm thanh", data['video_id'], task_id, worker_id)
+                return False  # Dừng toàn bộ nếu gặp lỗi
+
+        # Ghi vào input_files.txt theo đúng thứ tự ban đầu của text_entries
+        with open(f'media/{video_id}/input_files.txt', 'w') as file:
+            for file_name in result_files:
+                if file_name:
+                    file.write(f"file 'voice/{os.path.basename(file_name)}'\n")
         update_status_video(
                             f"Đang Render : Đã tạo xong giọng đọc",
                             video_id, task_id, worker_id
@@ -1765,43 +1756,23 @@ def download_image(data, task_id, worker_id):
     total_images = len(images)  # Tổng số hình ảnh cần tải
 
     downloaded_images = 0  # Số hình ảnh đã tải xuống thành công
-
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        future_to_url = {
-            executor.submit(download_single_image, image, local_directory): image
-            for image in images
-        }
-
-        for future in as_completed(future_to_url):
-            url = future_to_url[future]
-            try:
-                # Kiểm tra kết quả của từng tương lai
-                if future.result():
-                    downloaded_images += 1
-                    percent_complete = (downloaded_images / total_images) * 100
-                    update_status_video(
-                        f"Đang Render : Tải xuống  file thành công ({downloaded_images}/{total_images}) - {percent_complete:.2f}%",
-                        video_id, task_id, worker_id
-                    )
-                else:
-                    # Hủy tất cả các tác vụ còn lại khi gặp lỗi tải xuống
-                    update_status_video(
-                        f"Render Lỗi : {os.getenv('name_woker')} Không thể tải xuống hình ảnh -{url}",
-                        video_id, task_id, worker_id
-                    )
-                    for pending in future_to_url:
-                        pending.cancel()  # Hủy tất cả các tác vụ chưa hoàn thành
-                    return False  # Ngừng tiến trình ngay khi gặp lỗi
-            except Exception as e:
-                print(f"Lỗi khi tải xuống {url}: {e}")
-                update_status_video(
-                    f"Render Lỗi : {os.getenv('name_woker')} Lỗi không xác định - {e} - {url}",
-                    video_id, task_id, worker_id
-                )
-                # Hủy tất cả các tác vụ còn lại và ngừng tiến trình
-                for pending in future_to_url:
-                    pending.cancel()
-                return False
+    
+    for image in images:
+        is_down_load = download_single_image(image, local_directory)
+        if is_down_load:
+            downloaded_images += 1
+            percent_complete = (downloaded_images / total_images) * 100
+            update_status_video(
+                f"Đang Render : Tải xuống  file thành công ({downloaded_images}/{total_images}) - {percent_complete:.2f}%",
+                video_id, task_id, worker_id
+            )
+        else:
+            print(f"Lỗi tải xuống hình ảnh từ {image}")
+            update_status_video(
+                f"Render Lỗi :  {os.getenv('name_woker')} Lỗi tải xuống hình ảnh {image}",
+                video_id, task_id, worker_id
+            )
+            return False
     return True
 
 def create_or_reset_directory(directory_path):

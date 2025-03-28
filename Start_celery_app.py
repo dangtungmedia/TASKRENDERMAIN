@@ -116,7 +116,7 @@ class VideoDownloader:
                         "-c:v", "h264_nvenc",  # Codec video
                         "-r","24",
                         "-profile:v" ,"high",
-                        "-b:v","12558k",
+                        "-b:v","8306k",
                         "-an","-f",
                         "mp4","-movflags",
                         "+faststart",
@@ -266,7 +266,6 @@ def get_local_ip():
     except Exception as e:
         print(f"Error getting local IP: {e}")
         return None
-
 
 # Main function
 if __name__ == "__main__":
