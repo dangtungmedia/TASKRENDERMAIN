@@ -1062,10 +1062,10 @@ async def image_to_video_zoom_in_async(image_file, path_video, path_audio, scale
             "-map", "[outv]",
             "-map", "2:a",  # Ánh xạ tất cả stream âm thanh từ file audio thứ 3
             "-t", str(duration),  # Đặt thời lượng video bằng thời lượng audio
-            "-c:v", "libx265",
+            "-c:v", "h264_nvenc",  # Codec video
             "-c:a", "aac",  # Đảm bảo codec âm thanh là AAC
             "-b:a", "192k",  # Bitrate âm thanh hợp lý
-            "-preset", "ultrafast",
+            "-preset", "p7",
             "-pix_fmt", "yuv420p",
             path_video
         ]

@@ -114,11 +114,9 @@ class VideoDownloader:
                         "-i", rf"{file_cache}",  # Đường dẫn video đầu vào
                         "-vf", f"scale=1280:720,fps=24",  # Độ phân giải
                         "-c:v", "h264_nvenc",  # Codec video
-                        "-r","24",
-                        "-c:v", "libx265",
                         "-c:a", "aac",  # Đảm bảo codec âm thanh là AAC
                         "-b:a", "192k",  # Bitrate âm thanh hợp lý
-                        "-preset", "ultrafast",
+                        "-preset", "p7",
                         "-pix_fmt", "yuv420p",
                         "-y",
                         file_path  # Đường dẫn lưu video sau xử lý
