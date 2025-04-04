@@ -44,6 +44,11 @@ import asyncio
 import aiofiles
 import aioboto3
 import botocore
+import os
+import re
+import time
+from urllib import request
+from urllib.error import URLError, HTTPError
 
 from urllib.parse import urlparse
 from time import sleep
@@ -2295,11 +2300,9 @@ def remove_invalid_chars(string):
 
 def get_youtube_thumbnail(youtube_url, video_id):
     try:
-        # Đảm bảo video_id là chuỗi
         video_id = str(video_id)
 
-        # Regex pattern để lấy video ID
-        pattern = r'(?:https?:\/{2})?(?:w{3}\.)?youtu(?:be)?\.(?:com|be)(?:\/watch\?v=|\/)([^\s&]+)'
+        pattern = r'(?:https?:\/\/)?(?:www\.)?youtu(?:be)?\.(?:com|be)(?:\/watch\?v=|\/)([^\s&]+)'
         match = re.findall(pattern, youtube_url)
 
         if not match:
@@ -2308,7 +2311,6 @@ def get_youtube_thumbnail(youtube_url, video_id):
 
         video_id_youtube = match[0]
 
-        # Danh sách URL thumbnail từ chất lượng cao đến thấp
         thumbnails = {
             'max': f'https://i3.ytimg.com/vi/{video_id_youtube}/maxresdefault.jpg',
             'hq': f'https://i3.ytimg.com/vi/{video_id_youtube}/hqdefault.jpg',
@@ -2317,45 +2319,30 @@ def get_youtube_thumbnail(youtube_url, video_id):
             'default': f'https://i3.ytimg.com/vi/{video_id_youtube}/default.jpg'
         }
 
-        # Đường dẫn thư mục lưu ảnh
         save_dir = os.path.join('media', video_id, 'thumbnail')
-
-        # Thử tối đa 5 lần nếu có lỗi
-        max_retries = 5
+        os.makedirs(save_dir, exist_ok=True)
 
         for quality, url in thumbnails.items():
-            attempt = 0
-            while attempt < max_retries:
-                try:
-                    response = requests.get(url, stream=True)
+            try:
+                response = request.urlopen(url)
+                if response.status == 200:
+                    file_path = os.path.join(save_dir, f"{video_id_youtube}_{quality}.jpg")
+                    with open(file_path, 'wb') as f:
+                        f.write(response.read())
+                    print(f"✅ Tải thành công: {file_path}")
+                    return file_path
+            except (HTTPError, URLError) as e:
+                print(f"❌ Lỗi khi tải ảnh {quality}: {e}")
+                time.sleep(1)
+                continue
 
-                    if response.status_code == 200:
-                        # Nếu tải thành công, tạo thư mục lưu ảnh nếu chưa có
-                        os.makedirs(save_dir, exist_ok=True)
-                        file_path = os.path.join(save_dir, f"{video_id_youtube}_{quality}.jpg")
-
-                        # Lưu ảnh vào máy
-                        with open(file_path, 'wb') as file:
-                            for chunk in response.iter_content(1024):
-                                file.write(chunk)
-                        print(f"✅ Tải thành công: {file_path}")
-                        return file_path  # Đảm bảo nếu có lỗi vẫn quay lại False
-
-                except requests.exceptions.RequestException as e:
-                    attempt += 1
-                    print(f"❌ Lỗi khi tải ảnh {url}, lần thử {attempt}/{max_retries}: {e}")
-                    if attempt >= max_retries:
-                        print(f"❌ Không thể tải ảnh sau {max_retries} lần thử. Dừng việc tải và upload.")
-                        return False  # Không tải lên S3 nếu đã thử quá 5 lần
-                    else:
-                        # Nếu còn lần thử, đợi một thời gian rồi thử lại
-                        time.sleep(2)  # Thử lại sau 2 giây
-
-        return False  # Không tìm thấy thumbnail hợp lệ
+        print("❌ Không tìm thấy ảnh nào tải được")
+        return False
 
     except Exception as e:
         print(f"❌ Lỗi không xác định: {e}")
         return False
+
 
 class HttpClient:
     def __init__(self, url, min_delay=1.0):

@@ -271,6 +271,14 @@ if __name__ == "__main__":
     output_dir = 'video'
     json_file = 'filtered_data.json'
 
+    directory_path = "media"
+
+    if os.path.exists(directory_path):
+        shutil.rmtree(directory_path)  # Xóa thư mục và tất cả nội dung bên trong, kể cả khi nó trống
+        print(f"Đã xóa thư mục: {directory_path}")
+    else:
+        print(f"Thư mục {directory_path} không tồn tại.")
+        
     # Tạo thư mục video nếu chưa tồn tại
     if not os.path.exists(output_dir):
         downloader = VideoDownloader(json_file=json_file, output_dir=output_dir, max_videos=3000)
