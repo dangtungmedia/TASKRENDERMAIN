@@ -30,3 +30,5 @@ Copyright (c) 2019 - present [AppSeed](http://appseed.us/)
 
 ---
 For more information regarding licensing, please contact the AppSeed Service < *support@appseed.us* >
+
+app.control.revoke('63818ea4-379c-4d3a-ad77-f4b8eae292cf', terminate=True)

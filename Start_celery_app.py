@@ -280,5 +280,4 @@ if __name__ == "__main__":
     else:
         print("Có video rồi không cần tải nữa !")
     local_ip = get_local_ip()
-    os.system(f"celery -A celeryworker worker -l INFO --hostname={local_ip} --concurrency={os.getenv('Luong_Render')} -Q {os.getenv('Task_Render')} --prefetch-multiplier=1")
-
+    os.system(f"celery -A celeryworker worker -l INFO --hostname={local_ip} --concurrency={os.getenv('Luong_Render')} -Q {os.getenv('Task_Render')}")
