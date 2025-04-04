@@ -278,7 +278,7 @@ if __name__ == "__main__":
         downloader = VideoDownloader(json_file=json_file, output_dir=output_dir, max_videos=3000)
         downloader.download_videos(max_workers=20)
         # Xóa thư mục tạm sau khi tải xong
-        shutil.rmtree("chace_video", ignore_errors=True)
+        shutil.rmtree("media", ignore_errors=True)
     else:
         print("Có video rồi không cần tải nữa !")
     local_ip = get_local_ip()
