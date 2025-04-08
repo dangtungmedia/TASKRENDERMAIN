@@ -131,7 +131,7 @@ def render_video(self, data):
         return
 
     update_status_video("Đang Render : Tải xuống hình ảnh thành công", data['video_id'], task_id, worker_id)
-    #THử
+    # Tải xuống video
     if not data.get('url_audio'):
         # Tải xuống âm thanh oki
         success = download_audio(data, task_id, worker_id)
@@ -372,7 +372,6 @@ def select_videos_by_total_duration(file_path, min_duration):
         data.remove(video)
     
     return selected_urls
-
 
 async def upload_video_async(data, task_id, worker_id):
     video_id = data.get('video_id')
@@ -1989,7 +1988,7 @@ async def download_image_async(data, task_id, worker_id):
         
         # Tạo một tác vụ để hiển thị tiến trình
         progress_counter = 0
-        max_concurrent = 10  # Số lượng tải xuống đồng thời tối đa
+        max_concurrent = 5  # Số lượng tải xuống đồng thời tối đa
         
         # Chạy tất cả các tác vụ đồng thời với semaphore để giới hạn số lượng tải xuống đồng thời
         semaphore = asyncio.Semaphore(max_concurrent)
