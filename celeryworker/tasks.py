@@ -1522,7 +1522,7 @@ async def download_audio_async(data, task_id, worker_id):
         display_task = asyncio.create_task(display_active_downloads(active_tasks, total_entries, stop_display_event))
         
         # Giới hạn số lượng kết nối đồng thời
-        max_concurrent = 10  # Điều chỉnh số lượng tải xuống đồng thời
+        max_concurrent = 3  # Điều chỉnh số lượng tải xuống đồng thời
         semaphore = asyncio.Semaphore(max_concurrent)
         
         # Tạo phiên HTTP chung cho tất cả các yêu cầu
@@ -2086,6 +2086,7 @@ def create_or_reset_directory(directory_path):
     except Exception as e:
         print(f"Lỗi: {e}")
         return False
+
 # Tính vị trí và kích thước mới của video crop
 def parse_crop_data(crop_data_str):
     # Tách chuỗi thành các phần tử và chuyển thành dictionary
