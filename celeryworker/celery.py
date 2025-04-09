@@ -10,3 +10,5 @@ app = Celery('celeryworker')
 app.autodiscover_tasks(['celeryworker'])
 app.conf.broker_url = os.environ.get('CELERY_BROKER_URL', 'redis://127.0.0.1:6379/0' )
 app.conf.result_backend = os.environ.get('CELERY_RESULT_BACKEND', 'redis://127.0.0.1:6379/0')
+
+app.conf.broker_connection_retry_on_startup = True
