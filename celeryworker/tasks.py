@@ -124,8 +124,6 @@ def clean_up_on_revoke(sender, request, terminated, signum, expired, **kw):
     update_status_video(f"Render Lỗi : {get_local_ip()}  dừng render!", video_id, task_id, worker_id)
     
     
-
-
 @shared_task(bind=True, priority=0,name='render_video',time_limit=14200,queue='render_video_content')
 def render_video(self, data):
     task_id = self.request.id  # Sử dụng self.request thay vì render_video_reupload.request
@@ -355,10 +353,22 @@ def cread_test_reup(data, task_id, worker_id):
                             print(f"Skipping invalid time format: {time_str}, error: {e}")
                             print(f"Lỗi khi chạy lệnh ffmpeg: {str(e)}")
             process.wait()
+            
+
     except Exception as e:
         print(f"Lỗi khi chạy lệnh ffmpeg: {str(e)}")
         update_status_video(f"Render Lỗi: {get_local_ip()} Lỗi khi thực hiện lệnh ffmpeg - {str(e)}", video_id, task_id, worker_id)
         return False
+    
+    finally:
+        # Kiểm tra và dừng FFmpeg nếu vẫn đang chạy
+        if process.poll() is None:  # Kiểm tra nếu tiến trình FFmpeg vẫn đang chạy
+            print("Đang dừng tiến trình FFmpeg...")
+            process.terminate()  # Dừng tiến trình FFmpeg
+            try:
+                process.wait(timeout=5)  # Chờ tối đa 5 giây để tiến trình dừng
+            except subprocess.TimeoutExpired:
+                process.kill()  # Nếu không dừng được, giết tiến trình FFmpeg
     
     # Kiểm tra tệp kết quả
     if os.path.exists(output_path) and os.path.getsize(output_path) > 0 and get_video_duration(output_path):
@@ -392,7 +402,6 @@ def select_videos_by_total_duration(file_path, min_duration):
         data.remove(video)
     
     return selected_urls
-
 
 async def upload_video_async(data, task_id, worker_id):
     video_id = data.get('video_id')
@@ -585,34 +594,46 @@ def create_video_file(data, task_id, worker_id):
         "-y",
         f"media/{video_id}/{name_video}.mp4" # Đường dẫn và tên file đầu ra
     ]
-    # Chạy lệnh ffmpeg và xử lý đầu ra
-    with subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True) as process:
-        for line in process.stderr:
-            if "time=" in line:
-                try:
-                    time_str = line.split("time=")[1].split(" ")[0].strip()
-                    if time_str == "N/A":
-                        continue  # Bỏ qua nếu không có thông tin thời gian
-                    h, m, s = map(float, time_str.split(":"))
-                    current_time = int(h * 3600 + m * 60 + s)
-                    percentage = (current_time / duration) * 100
-                    update_status_video(f"Đang Render: Đã xuất video {percentage:.2f}%", video_id, task_id, worker_id)
-                except Exception as e:
-                    print(f"Error parsing time: {e}")
-                    update_status_video(f"Render Lỗi : {get_local_ip()}  Không thể tính toán hoàn thành", data['video_id'], task_id, worker_id)
-        process.wait()
-            
-    if process.returncode != 0:
-        print("FFmpeg encountered an error.")
-        stderr_output = ''.join(process.stderr)
-        print(f"Error log:\n{stderr_output}")
-        update_status_video(f"Render Lỗi : {get_local_ip()} không thể render video hoàn thành ", data['video_id'], task_id, worker_id)
-        return False
-    else:
-        print("Lồng nhạc nền thành công.")
-        update_status_video(f"Đang Render: Đã xuất video và chèn nhạc nền thành công , chuẩn bị upload lên sever", video_id, task_id, worker_id)
-        return True
 
+    try:
+        # Chạy lệnh ffmpeg và xử lý đầu ra
+        with subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True) as process:
+            for line in process.stderr:
+                if "time=" in line:
+                    try:
+                        time_str = line.split("time=")[1].split(" ")[0].strip()
+                        if time_str == "N/A":
+                            continue  # Bỏ qua nếu không có thông tin thời gian
+                        h, m, s = map(float, time_str.split(":"))
+                        current_time = int(h * 3600 + m * 60 + s)
+                        percentage = (current_time / duration) * 100
+                        update_status_video(f"Đang Render: Đã xuất video {percentage:.2f}%", video_id, task_id, worker_id)
+                    except Exception as e:
+                        print(f"Error parsing time: {e}")
+                        update_status_video(f"Render Lỗi : {get_local_ip()}  Không thể tính toán hoàn thành", data['video_id'], task_id, worker_id)
+
+            process.wait()
+    except Exception as e:
+        print(f"Error running ffmpeg command: {e}")
+        update_status_video(f"Render Lỗi : {get_local_ip()} Lỗi khi thực hiện lệnh ffmpeg - {str(e)}", data['video_id'], task_id, worker_id)
+        
+    finally:
+        # Kiểm tra và dừng FFmpeg nếu vẫn đang chạy
+        if process.poll() is None:  # Kiểm tra nếu tiến trình FFmpeg vẫn đang chạy
+            print("Đang dừng tiến trình FFmpeg...")
+            process.terminate()  # Dừng tiến trình FFmpeg
+            try:
+                process.wait(timeout=5)  # Chờ tối đa 5 giây để tiến trình dừng
+            except subprocess.TimeoutExpired:
+                process.kill()  # Nếu không dừng được, giết tiến trình FFmpeg
+    output_path = f"media/{video_id}/{name_video}.mp4"
+    if os.path.exists(output_path) and os.path.getsize(output_path) > 0 and get_video_duration(output_path):
+        update_status_video("Đang Render: Xuất video xong ! chuẩn bị upload lên sever", data['video_id'], task_id, worker_id)
+        return True
+    else:
+        update_status_video(f"Render Lỗi: {get_local_ip()} Lỗi xuất video bằng ffmpeg vui lòng chạy lại ,file xuất lỗi", data['video_id'], task_id, worker_id)
+        return False
+                
 def find_font_file(font_name, font_dir, extensions=[".ttf", ".otf", ".woff", ".woff2"]):
     print(f"Searching for font '{font_name}' in directory '{font_dir}' with extensions {extensions}")
     for root, dirs, files in os.walk(font_dir):
@@ -2131,7 +2152,7 @@ def get_video_info(data,task_id,worker_id):
     try:
         api_url = "https://iloveyt.net/proxy.php"
         form_data = {"url": video_url}
-        response = requests.post(api_url, data=form_data, timeout=10)
+        response = requests.post(api_url, data=form_data, timeout=120)
         api_data = response.json()
         
         if "api" not in api_data or "mediaItems" not in api_data["api"]:
@@ -2172,7 +2193,7 @@ def get_video_info(data,task_id,worker_id):
     try:
         api_url = "https://opendown.net/proxy.php"
         form_data = {"url": video_url}
-        response = requests.post(api_url, data=form_data, timeout=10)
+        response = requests.post(api_url, data=form_data, timeout=120)
         api_data = response.json()
         
         if "api" not in api_data or "mediaItems" not in api_data["api"]:
@@ -2374,6 +2395,7 @@ class HttpClient:
             "Đang Render : Đang xử lý video render",
             "Đang Render : Đã lấy thành công thông tin video reup",
             "Đang Render : Đã chọn xong video nối",
+            "Đang Render: Đã tải xong video",
             "Render Lỗi"
         ]
 
@@ -2396,49 +2418,42 @@ class HttpClient:
                     
                 for attempt in range(max_retries):
                     try:
-                        if file_data:
-                            response = requests.post(self.url, data=data, files=file_data, timeout=10)
-                        else:
-                            response = requests.post(self.url, json=data, timeout=10)
+                        response = requests.post(self.url, json=data, timeout=10)
 
                         if response.status_code == 200:
                             self.last_send_time = time.time()
                             return True
                     except requests.Timeout:
-                        pass
-                    except requests.RequestException:
-                        pass
+                        print(f"Timeout khi gửi dữ liệu, lần thử {attempt+1}/{max_retries}")
+                    except requests.RequestException as e:
+                        print(f"Lỗi khi gửi dữ liệu: {str(e)}, lần thử {attempt+1}/{max_retries}")
 
                     time.sleep(min(2 ** attempt, 10))
 
+                print(f"Đã thử gửi {max_retries} lần nhưng không thành công")
                 return False
-            except Exception:
+            except Exception as e:
+                print(f"Lỗi không xác định khi gửi dữ liệu: {str(e)}")
                 return False
 
-
+# Khởi tạo đối tượng HttpClient
 http_client = HttpClient(url=os.getenv('url_web') + "/api/")
 
 def update_status_video(status_video, video_id, task_id, worker_id, url_thumnail=None, url_video=None, title=None, id_video_google=None):
+    """Cập nhật trạng thái video lên server."""
     data = {
         'action': 'update_status',
         'video_id': video_id,
         'status': status_video,
         'task_id': task_id,
         'worker_id': worker_id,
+        "url_thumnail": url_thumnail,
         'title': remove_invalid_chars(title),
         'url_video': url_video,
         'id_video_google': id_video_google,
         "secret_key": os.environ.get('SECRET_KEY')
     }
-
-    if url_thumnail:
-        try:
-            with open(url_thumnail, 'rb') as f:
-                data_file = {'thumnail': f}
-                return http_client.send(data, file_data=data_file)  # Gửi tại đây luôn
-        except FileNotFoundError:
-            print(f"❌ Không tìm thấy file: {url_thumnail}")
-    else:
-        return http_client.send(data)
+    return http_client.send(data) 
+       
 
         
