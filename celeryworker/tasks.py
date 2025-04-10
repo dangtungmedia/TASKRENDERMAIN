@@ -2430,25 +2430,18 @@ class HttpClient:
                         # Kiểm tra phản hồi
                         if response.status_code == 200:
                             self.last_send_time = time.time()
-                            self.logger.info(f"Successfully sent message: {status}")
                             return True
                         else:
                             self.logger.error(f"Failed to send message: {response.status_code} - {response.text}")
                         
-                    except requests.Timeout:
-                        self.logger.error(f"Timeout on attempt {attempt + 1}")
-                    except requests.RequestException as e:
-                        self.logger.error(f"Request failed: {str(e)}")
-                        
-                    # Exponential backoff for retry delay
-                    sleep_time = min(2 ** attempt, 10)  # Exponential backoff
-                    time.sleep(sleep_time)
+                    except Exception as e:
+                        # Exponential backoff for retry delay
+                        sleep_time = min(2 ** attempt, 10)  # Exponential backoff
+                        time.sleep(sleep_time)
                 
-                self.logger.error(f"Failed to send after {max_retries} attempts")
                 return False
                 
             except Exception as e:
-                self.logger.error(f"Error in send method: {str(e)}")
                 return False
 # Khởi tạo đối tượng HttpClient
 http_client = HttpClient(url=os.getenv('url_web') + "/api/")
@@ -2472,7 +2465,7 @@ def update_status_video(status_video, video_id, task_id, worker_id, url_thumnail
                 data_file = {'thumnail': f}  # Correct key to 'thumbnail'
                 http_client.send(data, file_data=data_file)
         except FileNotFoundError:
-            logging.error(f"File not found: {url_thumnail}")
+            pass
     else:
         http_client.send(data)
        
