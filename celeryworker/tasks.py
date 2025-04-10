@@ -2409,6 +2409,9 @@ class HttpClient:
         return time_since_last >= self.min_delay
 
     def send(self, data, file_data=None, max_retries=3):
+        """Send data through HTTP request with rate limiting and retries.
+        file_data is expected to be a dictionary with key as field name and value as file object (e.g. open('file_path', 'rb'))."""
+
         with self.lock:
             try:
                 status = data.get('status')
@@ -2418,42 +2421,60 @@ class HttpClient:
                     
                 for attempt in range(max_retries):
                     try:
-                        response = requests.post(self.url, json=data, timeout=10)
+                        if file_data:
+                            # Gửi HTTP POST request với form data và file
+                            response = requests.post(self.url, data=data, files=file_data, timeout=10)
+                        else:
+                            response = requests.post(self.url, json=data,timeout=10)
 
+                        # Kiểm tra phản hồi
                         if response.status_code == 200:
                             self.last_send_time = time.time()
+                            self.logger.info(f"Successfully sent message: {status}")
                             return True
+                        else:
+                            self.logger.error(f"Failed to send message: {response.status_code} - {response.text}")
+                        
                     except requests.Timeout:
-                        print(f"Timeout khi gửi dữ liệu, lần thử {attempt+1}/{max_retries}")
+                        self.logger.error(f"Timeout on attempt {attempt + 1}")
                     except requests.RequestException as e:
-                        print(f"Lỗi khi gửi dữ liệu: {str(e)}, lần thử {attempt+1}/{max_retries}")
-
-                    time.sleep(min(2 ** attempt, 10))
-
-                print(f"Đã thử gửi {max_retries} lần nhưng không thành công")
+                        self.logger.error(f"Request failed: {str(e)}")
+                        
+                    # Exponential backoff for retry delay
+                    sleep_time = min(2 ** attempt, 10)  # Exponential backoff
+                    time.sleep(sleep_time)
+                
+                self.logger.error(f"Failed to send after {max_retries} attempts")
                 return False
+                
             except Exception as e:
-                print(f"Lỗi không xác định khi gửi dữ liệu: {str(e)}")
+                self.logger.error(f"Error in send method: {str(e)}")
                 return False
-
 # Khởi tạo đối tượng HttpClient
 http_client = HttpClient(url=os.getenv('url_web') + "/api/")
 
 def update_status_video(status_video, video_id, task_id, worker_id, url_thumnail=None, url_video=None, title=None, id_video_google=None):
-    """Cập nhật trạng thái video lên server."""
     data = {
         'action': 'update_status',
         'video_id': video_id,
         'status': status_video,
         'task_id': task_id,
         'worker_id': worker_id,
-        "url_thumnail": url_thumnail,
         'title': remove_invalid_chars(title),
         'url_video': url_video,
         'id_video_google': id_video_google,
         "secret_key": os.environ.get('SECRET_KEY')
     }
-    return http_client.send(data) 
+    
+    if url_thumnail:
+        try:
+            with open(url_thumnail, 'rb') as f:
+                data_file = {'thumnail': f}  # Correct key to 'thumbnail'
+                http_client.send(data, file_data=data_file)
+        except FileNotFoundError:
+            logging.error(f"File not found: {url_thumnail}")
+    else:
+        http_client.send(data)
        
 
         
