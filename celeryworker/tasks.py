@@ -2384,11 +2384,12 @@ def get_youtube_thumbnail(youtube_url, video_id):
 
 class HttpClient:
     def __init__(self, url, min_delay=1.0):
-        self.url = url
+        self.url = url  # Endpoint API URL
         self.lock = Lock()
         self.last_send_time = 0
         self.min_delay = min_delay
         
+        # Status messages that bypass rate limiting
         self.important_statuses = [
             "Render Thành Công : Đang Chờ Upload lên Kênh",
             "Đang Render : Upload file File Lên Server thành công!",
@@ -2398,16 +2399,26 @@ class HttpClient:
             "Đang Render: Đã tải xong video",
             "Render Lỗi"
         ]
+        self.logger = self._setup_logger()
 
+    def _setup_logger(self):
+        """Setup logging configuration"""
+        logger = logging.getLogger(__name__)
+        logger.setLevel(logging.INFO)
+        return logger
+        
     def should_send(self, status):
+        """Check if message should be sent based on status and rate limiting"""
         current_time = time.time()
         time_since_last = current_time - self.last_send_time
 
+        # Check if status contains any important keywords
         if status and any(keyword in status for keyword in self.important_statuses):
             return True
             
+        # Apply rate limiting for other statuses
         return time_since_last >= self.min_delay
-
+        
     def send(self, data, file_data=None, max_retries=3):
         """Send data through HTTP request with rate limiting and retries.
         file_data is expected to be a dictionary with key as field name and value as file object (e.g. open('file_path', 'rb'))."""
@@ -2430,22 +2441,28 @@ class HttpClient:
                         # Kiểm tra phản hồi
                         if response.status_code == 200:
                             self.last_send_time = time.time()
+                            self.logger.info(f"Successfully sent message: {status}")
                             return True
                         else:
                             self.logger.error(f"Failed to send message: {response.status_code} - {response.text}")
                         
-                    except Exception as e:
-                        # Exponential backoff for retry delay
-                        sleep_time = min(2 ** attempt, 10)  # Exponential backoff
-                        time.sleep(sleep_time)
+                    except requests.Timeout:
+                        self.logger.error(f"Timeout on attempt {attempt + 1}")
+                    except requests.RequestException as e:
+                        self.logger.error(f"Request failed: {str(e)}")
+                        
+                    # Exponential backoff for retry delay
+                    sleep_time = min(2 ** attempt, 10)  # Exponential backoff
+                    time.sleep(sleep_time)
                 
+                self.logger.error(f"Failed to send after {max_retries} attempts")
                 return False
                 
             except Exception as e:
+                self.logger.error(f"Error in send method: {str(e)}")
                 return False
-# Khởi tạo đối tượng HttpClient
-http_client = HttpClient(url=os.getenv('url_web') + "/api/")
 
+http_client = HttpClient(url=os.getenv('url_web') + "/api/")
 def update_status_video(status_video, video_id, task_id, worker_id, url_thumnail=None, url_video=None, title=None, id_video_google=None):
     data = {
         'action': 'update_status',
@@ -2465,9 +2482,6 @@ def update_status_video(status_video, video_id, task_id, worker_id, url_thumnail
                 data_file = {'thumnail': f}  # Correct key to 'thumbnail'
                 http_client.send(data, file_data=data_file)
         except FileNotFoundError:
-            pass
+            logging.error(f"File not found: {url_thumnail}")
     else:
         http_client.send(data)
-       
-
-        
