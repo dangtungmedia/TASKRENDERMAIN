@@ -44,7 +44,7 @@ import asyncio
 import aiofiles
 import aioboto3
 import botocore
-
+from fake_useragent import UserAgent
 from urllib.parse import urlparse
 from time import sleep
 # Nạp biến môi trường từ file .env
@@ -113,7 +113,7 @@ def render_video(self, data):
     update_status_video("Đang Render : Đang xử lý video render", data['video_id'], task_id, worker_id)
     success = create_or_reset_directory(f'media/{video_id}')
     
-    if not os.path.exists("video")  and not os.path.exists("video_screen") :
+    if not os.path.exists("video_screen") :
         update_status_video(f"Render Lỗi : {os.getenv('name_woker')}  Thiếu các tệp video  và  video_screen ", data['video_id'], task_id, worker_id)
         return
 
@@ -291,11 +291,13 @@ def cread_test_reup(data, task_id, worker_id):
         ),
         "-map", "[outv]",
         "-map", "[a]",
-        "-c:v", "libx265",
+        "-r", "24",
+        "-c:v", "hevc_nvenc",  # Codec video
         "-c:a", "aac",  # Đảm bảo codec âm thanh là AAC
         "-b:a", "192k",  # Bitrate âm thanh hợp lý
-        "-preset", "ultrafast",
-        "-pix_fmt", "yuv420p",
+        "-preset", "hq",
+        "-pix_fmt", "yuv420p",  # Định dạng pixel
+        "-y",
         output_path
     ]
     
@@ -1393,7 +1395,10 @@ async def get_voice_super_voice_async(session, data, text, file_name, semaphore)
 
             for retry_count in range(2):  
                 try:
-                    headers = {'Authorization': f'Bearer {ACCESS_TOKEN}', 'Content-Type': 'application/json'}
+                    headers = {'Authorization': f'Bearer {ACCESS_TOKEN}', 
+                               'Content-Type': 'application/json',
+                               "User-Agent": UserAgent().google
+                               }
                     async with session.post('https://typecast.ai/api/speak/batch/post', 
                                           headers=headers, 
                                           json=style_name_data) as response:
