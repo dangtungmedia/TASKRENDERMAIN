@@ -2302,8 +2302,8 @@ def get_youtube_thumbnail(youtube_url, video_id):
         # Đảm bảo video_id là chuỗi
         video_id = str(video_id)
 
-        # Regex pattern để lấy video ID
-        pattern = r'(?:https?:\/{2})?(?:w{3}\.)?youtu(?:be)?\.(?:com|be)(?:\/watch\?v=|\/)([^\s&]+)'
+        # Regex pattern để lấy video ID từ URL
+        pattern = r'(?:https?:\/\/)?(?:www\.)?youtu(?:be)?\.(?:com|be)(?:\/watch\?v=|\/)([^\s&]+)'
         match = re.findall(pattern, youtube_url)
 
         if not match:
@@ -2323,6 +2323,7 @@ def get_youtube_thumbnail(youtube_url, video_id):
 
         # Đường dẫn thư mục lưu ảnh
         save_dir = os.path.join('media', video_id, 'thumbnail')
+        os.makedirs(save_dir, exist_ok=True)
 
         # Thử tối đa 5 lần nếu có lỗi
         max_retries = 5
@@ -2334,28 +2335,62 @@ def get_youtube_thumbnail(youtube_url, video_id):
                     response = requests.get(url, stream=True)
 
                     if response.status_code == 200:
-                        # Nếu tải thành công, tạo thư mục lưu ảnh nếu chưa có
-                        os.makedirs(save_dir, exist_ok=True)
                         file_path = os.path.join(save_dir, f"{video_id_youtube}_{quality}.jpg")
 
                         # Lưu ảnh vào máy
                         with open(file_path, 'wb') as file:
                             for chunk in response.iter_content(1024):
                                 file.write(chunk)
+
                         print(f"✅ Tải thành công: {file_path}")
-                        return file_path  # Đảm bảo nếu có lỗi vẫn quay lại False
+
+                        # Upload lên S3
+                        s3 = boto3.client(
+                            's3',
+                            endpoint_url=os.environ.get('S3_ENDPOINT_URL'),
+                            aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+                            aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY')
+                        )
+
+                        bucket_name = os.environ.get('S3_BUCKET_NAME')
+                        object_name = f'data/{video_id}/thumbnail/{video_id_youtube}_{quality}.jpg'
+
+                        s3.upload_file(
+                            file_path,
+                            bucket_name,
+                            object_name,
+                            ExtraArgs={
+                                'ContentType': 'image/jpeg',
+                                'ContentDisposition': 'inline'
+                            }
+                        )
+
+                        # Tạo URL tạm thời
+                        expiration = 365 * 24 * 60 * 60  # 1 năm
+                        presigned_url = s3.generate_presigned_url(
+                            'get_object',
+                            Params={
+                                'Bucket': bucket_name,
+                                'Key': object_name,
+                                'ResponseContentType': 'image/jpeg',
+                                'ResponseContentDisposition': 'inline'
+                            },
+                            ExpiresIn=expiration
+                        )
+
+                        return presigned_url
+
+                    else:
+                        print(f"⚠️ Ảnh không tồn tại: {url} - Status code: {response.status_code}")
+                        break  # Không cần thử lại nếu ảnh không tồn tại
 
                 except requests.exceptions.RequestException as e:
                     attempt += 1
                     print(f"❌ Lỗi khi tải ảnh {url}, lần thử {attempt}/{max_retries}: {e}")
-                    if attempt >= max_retries:
-                        print(f"❌ Không thể tải ảnh sau {max_retries} lần thử. Dừng việc tải và upload.")
-                        return False  # Không tải lên S3 nếu đã thử quá 5 lần
-                    else:
-                        # Nếu còn lần thử, đợi một thời gian rồi thử lại
-                        time.sleep(2)  # Thử lại sau 2 giây
+                    time.sleep(2)
 
-        return False  # Không tìm thấy thumbnail hợp lệ
+        print("❌ Không thể lấy bất kỳ thumbnail nào.")
+        return False
 
     except Exception as e:
         print(f"❌ Lỗi không xác định: {e}")
@@ -2397,10 +2432,9 @@ class HttpClient:
         # Apply rate limiting for other statuses
         return time_since_last >= self.min_delay
         
-    def send(self, data, file_data=None, max_retries=3):
+    def send(self, data, max_retries=3):
         """Send data through HTTP request with rate limiting and retries.
         file_data is expected to be a dictionary with key as field name and value as file object (e.g. open('file_path', 'rb'))."""
-
         with self.lock:
             try:
                 status = data.get('status')
@@ -2410,12 +2444,7 @@ class HttpClient:
                     
                 for attempt in range(max_retries):
                     try:
-                        if file_data:
-                            # Gửi HTTP POST request với form data và file
-                            response = requests.post(self.url, data=data, files=file_data, timeout=10)
-                        else:
-                            response = requests.post(self.url, json=data,timeout=10)
-
+                        response = requests.post(self.url, json=data,timeout=10)
                         # Kiểm tra phản hồi
                         if response.status_code == 200:
                             self.last_send_time = time.time()
@@ -2449,19 +2478,11 @@ def update_status_video(status_video, video_id, task_id, worker_id, url_thumnail
         'task_id': task_id,
         'worker_id': worker_id,
         'title': remove_invalid_chars(title),
+        'url_thumnail':url_thumnail,
         'url_video': url_video,
         'id_video_google': id_video_google,
         "secret_key": os.environ.get('SECRET_KEY')
     }
-    
-    if url_thumnail:
-        try:
-            with open(url_thumnail, 'rb') as f:
-                data_file = {'thumnail': f}  # Correct key to 'thumbnail'
-                http_client.send(data, file_data=data_file)
-        except FileNotFoundError:
-            logging.error(f"File not found: {url_thumnail}")
-    else:
-        http_client.send(data)
+    http_client.send(data)
         
         
