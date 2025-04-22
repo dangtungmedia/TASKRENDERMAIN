@@ -2268,7 +2268,7 @@ def update_info_video(data, task_id, worker_id):
             update_status_video(f"Render Lỗi: {os.getenv('name_woker')} lỗi lấy ảnh thumbnail", 
                           data.get('video_id'), task_id, worker_id)
             return False
-        update_status_video(f"Đang Render : {os.getenv('name_woker')} Đã lấy thành công thông tin video reup", 
+        update_status_video(f"Đang Render : Đã lấy thành công thông tin video reup", 
                           video_id, task_id, worker_id,url_thumnail=thumnail,title=result["title"])
         return True
 
@@ -2377,7 +2377,7 @@ def get_youtube_thumbnail(youtube_url, video_id):
                             },
                             ExpiresIn=expiration
                         )
-
+                        print(presigned_url)
                         return presigned_url
 
                     else:
@@ -2478,7 +2478,7 @@ def update_status_video(status_video, video_id, task_id, worker_id, url_thumnail
         'task_id': task_id,
         'worker_id': worker_id,
         'title': remove_invalid_chars(title),
-        'url_thumnail':url_thumnail,
+        'url_thumbnail':url_thumnail,
         'url_video': url_video,
         'id_video_google': id_video_google,
         "secret_key": os.environ.get('SECRET_KEY')
