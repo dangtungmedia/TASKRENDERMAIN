@@ -11,9 +11,10 @@ def send_typecast_request():
     ua = UserAgent()
     # Sử dụng CHÍNH XÁC headers từ Postman
     headers = {
-        "authorization": "Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6Ijg1NzA4MWNhOWNiYjM3YzIzNDk4ZGQzOTQzYmYzNzFhMDU4ODNkMjgiLCJ0eXAiOiJKV1QifQ.eyJfaWQiOiI2N2U2Njg3MGQ3NDQ3ZWZlMmVmYTBiNjkiLCJhcHByb3ZlZCI6dHJ1ZSwiYXV0aHR5cGUiOiJmaXJlYmFzZSIsInByb3ZpZGVyIjoicGFzc3dvcmQiLCJpc19wYWlkIjpmYWxzZSwiaXNzIjoiaHR0cHM6Ly9zZWN1cmV0b2tlbi5nb29nbGUuY29tL3R5cGVjYXN0LXByb2QtNTBjYjEiLCJhdWQiOiJ0eXBlY2FzdC1wcm9kLTUwY2IxIiwiYXV0aF90aW1lIjoxNzQ1MjI0OTYxLCJ1c2VyX2lkIjoidUVOZjVsOXZqNVl6TWs3djZjOUJzTmIyNTZBMyIsInN1YiI6InVFTmY1bDl2ajVZek1rN3Y2YzlCc05iMjU2QTMiLCJpYXQiOjE3NDUyMjQ5NjEsImV4cCI6MTc0NTIyODU2MSwiZW1haWwiOiJzaGs1MzAxNEBqaW9zby5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiZmlyZWJhc2UiOnsiaWRlbnRpdGllcyI6eyJlbWFpbCI6WyJzaGs1MzAxNEBqaW9zby5jb20iXX0sInNpZ25faW5fcHJvdmlkZXIiOiJjdXN0b20ifX0.dYTzd1PrqBIm4zCz8AslLmue8oIOT042ByoU9OzbrecGIJT97baxuX2GbtsOyf_-GH-DFoMAM4UqoDzHeCpo09DKgIVrE36sCuD36SQWJwVfE1Nrv3LFry0rxI5lXCDO5B4Ru0ZHWVeBlXDIzmFbziTvH8YBAgUQdiSutbPertOw33KdGTb10Zmm22SYyw4cw7oV3l6SLER-8iyLikuFk7OAkMQ1KZep7lyX8XLkHPYmCkopOuOynQ7Fl-HzAXZBGWjFxIhc4Fc_KEb5Qc6vPDMGf6aRe7G-yVj7CjfVE4d6A9I9BtQhcS7jbo4fYO9mlcIUGotuONWyAt35z-fx4Q",
+        "authorization": "Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6IjkwOTg1NzhjNDg4MWRjMDVlYmYxOWExNWJhMjJkOGZkMWFiMzRjOGEiLCJ0eXAiOiJKV1QifQ.eyJuYW1lIjoiVHVuZyBkYW5nIiwicGljdHVyZSI6Imh0dHBzOi8vbGgzLmdvb2dsZXVzZXJjb250ZW50LmNvbS9hL0FHTm15eGIzZWg4cjAzYmNqRkxkT3ZIcFpNeDZPOWR3TVdFYWk3X18tWXdLPXM5Ni1jIiwiX2lkIjoiNjQ1NTQ0ZDFiYzI5M2FhYjQzZmZhMWE2IiwiYXBwcm92ZWQiOnRydWUsImF1dGh0eXBlIjoiZmlyZWJhc2UiLCJwcm92aWRlciI6InBhc3N3b3JkIiwiaXNfcGFpZCI6ZmFsc2UsImlzcyI6Imh0dHBzOi8vc2VjdXJldG9rZW4uZ29vZ2xlLmNvbS90eXBlY2FzdC1wcm9kLTUwY2IxIiwiYXVkIjoidHlwZWNhc3QtcHJvZC01MGNiMSIsImF1dGhfdGltZSI6MTc0NTY0ODk0OSwidXNlcl9pZCI6Ikc1RjhwdHFiT2VUQnlOMVdDeXRyamp0ZVhkZDIiLCJzdWIiOiJHNUY4cHRxYk9lVEJ5TjFXQ3l0cmpqdGVYZGQyIiwiaWF0IjoxNzQ1NjQ4OTQ5LCJleHAiOjE3NDU2NTI1NDksImVtYWlsIjoiZGFuZ3R1bmdtZWRpYUBnbWFpbC5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiZmlyZWJhc2UiOnsiaWRlbnRpdGllcyI6eyJlbWFpbCI6WyJkYW5ndHVuZ21lZGlhQGdtYWlsLmNvbSJdfSwic2lnbl9pbl9wcm92aWRlciI6ImN1c3RvbSJ9fQ.VmRa1_2NmlMPenlVqzU-gNunR9ufuLgHo3B941E0wLyiObIphlRgKYymnf3KMmEEsbhDlt9WdNMXGFdk-4U6tdjbSaOjVylK20K4xV8awjbOdoRxQ7L2lG1TIIBrwFhEJ7plJFNrLspKyb7mRXUtPunsYTWt-OORqgK-Fm5E6_zwTQ-k90H2AiAJBWe5YW5HscrtYgdZVYw3MhT_vmc0yWqpz3TFABDHjy90-kDp_k8ExdjoX8L0v-XmC_Qabxy_piWTLAxGQ0Lam5WWU4DzQZ17F1sj1xs8VTBSrEzMAWVPVgkYhoPi-uLnGmqkCcf22vkHyInCBREcCDBjvVBPkQ",
         "Content-Type": "application/json",
-        "User-Agent": ua.google
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+        
     }
 
     # Sử dụng CHÍNH XÁC payload từ cURL
@@ -37,11 +38,15 @@ def send_typecast_request():
     print("URL:", url)
     print("Headers:", json.dumps(headers, indent=2))
     print("Payload:", payload_str)
-
+    
+    proxies = {
+        "https": "http://dangtmunZh:0auVrCMq@103.167.92.214:8943",
+    }
+    # Gửi request
     try:
         # Thử nhiều cách gửi request
         print("\n--- Phương pháp 1: Gửi payload dạng string ---")
-        response1 = requests.post(url, headers=headers, data=payload_str, verify=False)
+        response1 = requests.post(url, headers=headers, data=payload_str, verify=False,proxies=proxies,timeout=10)
         print(f"Status code: {response1.status_code}")
         print(f"Response: {response1.text}")
 
@@ -59,3 +64,12 @@ def send_typecast_request():
 
 if __name__ == "__main__":
     send_typecast_request()
+
+    # repose = requests.get("https://api.zingproxy.com/getip/us/f49740492df909e449ba33bfb8585f435041bc6b")
+
+    # print(repose.text)
+    # print(repose.json())
+
+
+ 
+                    

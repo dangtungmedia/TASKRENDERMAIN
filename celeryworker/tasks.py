@@ -1280,52 +1280,78 @@ def create_video_lines(data, task_id, worker_id):
     max_concurrent=int(logical_cores /8)
     return asyncio.run(create_video_lines_async(data, task_id, worker_id,max_concurrent))
 
-async def login_data_async(session, email, password):
-    """ Đăng nhập để lấy idToken (async) """
+def login_data(email, password):
+    """Đăng nhập để lấy idToken (sync, dùng requests)"""
+    url = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword'
+    params = {"key": "AIzaSyBJN3ZYdzTmjyQJ-9TdpikbsZDT9JUAYFk"}
     data = {
         "returnSecureToken": True,
         "email": email,
         "password": password,
         "clientType": "CLIENT_TYPE_WEB"
     }
-    params = {"key": "AIzaSyBJN3ZYdzTmjyQJ-9TdpikbsZDT9JUAYFk"}
-    url = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword'
-    
-    async with session.post(url, params=params, json=data) as response:
-        if response.status != 200:
-            response.raise_for_status()
-        result = await response.json()
-        return result['idToken']
-
-async def get_access_token_async(session, idToken):
-    """ Lấy access_token từ idToken (async) """
-    async with session.post('https://typecast.ai/api/auth-fb/custom-token', json={"token": idToken}) as response:
-        if response.status != 200:
-            response.raise_for_status()
-        result = await response.json()
-        return result["result"]['access_token']
-
-async def active_token_async(session, access_token):
-    """ Lấy idToken từ access_token (async) """
-    params = {"key": "AIzaSyBJN3ZYdzTmjyQJ-9TdpikbsZDT9JUAYFk"}
-    async with session.post('https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken',
-                          params=params, json={"token": access_token, "returnSecureToken": True}) as response:
-        if response.status != 200:
-            response.raise_for_status()
-        result = await response.json()
-        return result['idToken']
-
-async def get_cookie_async(session, email, password):
-    """ Lấy Access Token từ email/password (async) """
     try:
-        Token_login = await login_data_async(session, email, password)
-        idToken = await get_access_token_async(session, Token_login)
-        ACCESS_TOKEN = await active_token_async(session, idToken)
+        response = requests.post(url, params=params, json=data, verify=False, timeout=10)
+        response.raise_for_status()  # Nếu lỗi status_code thì tự động raise Exception
+        result = response.json()
+        return result['idToken']
+    except Exception as e:
+        print(f"Lỗi đăng nhập: {e}")
+        return None
+
+def get_access_token(idToken):
+    """Lấy access_token từ idToken (sync, dùng requests)"""
+    url = 'https://typecast.ai/api/auth-fb/custom-token'
+    payload = {"token": idToken}
+    
+    try:
+        response = requests.post(url, json=payload, verify=False, timeout=10)
+        response.raise_for_status()  # Nếu lỗi 4xx/5xx sẽ tự raise
+        result = response.json()
+        return result["result"]['access_token']
+    except Exception as e:
+        print(f"Lỗi lấy access_token: {e}")
+        return None
+
+def active_token(access_token):
+    """Lấy idToken từ access_token (sync, dùng requests)"""
+    url = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken'
+    params = {"key": "AIzaSyBJN3ZYdzTmjyQJ-9TdpikbsZDT9JUAYFk"}
+    payload = {
+        "token": access_token,
+        "returnSecureToken": True
+    }
+    
+    try:
+        response = requests.post(url, params=params, json=payload, verify=False, timeout=10)
+        response.raise_for_status()
+        result = response.json()
+        return result['idToken']
+    except Exception as e:
+        print(f"Lỗi active_token: {e}")
+        return None
+    
+def get_cookie(email, password):
+    """Lấy Access Token từ email/password (sync, dùng requests)"""
+    try:
+        Token_login = login_data(email, password)
+        if not Token_login:
+            raise Exception("Không lấy được Token login")
+
+        idToken = get_access_token(Token_login)
+        if not idToken:
+            raise Exception("Không lấy được idToken")
+
+        ACCESS_TOKEN = active_token(idToken)
+        if not ACCESS_TOKEN:
+            raise Exception("Không lấy được ACCESS_TOKEN")
+
         return ACCESS_TOKEN
     except Exception as e:
         print(f"Lỗi đăng nhập với tài khoản {email}: {str(e)}")
         return None
-
+    
+    
 def load_accounts(filename="accounts.txt"):
     """ Đọc danh sách tài khoản từ file và xáo trộn """
     accounts = []
@@ -1338,244 +1364,240 @@ def load_accounts(filename="accounts.txt"):
     random.shuffle(accounts)  # Xáo trộn tài khoản để tránh bị chặn theo thứ tự
     return accounts
 
-async def get_audio_url_async(session, ACCESS_TOKEN, url_voice_text):
-    """Hàm lấy URL audio từ API (async)."""
+def get_audio_url(ACCESS_TOKEN, url_voice_text):
+    """Hàm lấy URL audio từ API (sync, dùng requests)."""
+    url = "https://typecast.ai/api/speak/batch/get"
+    headers = {
+        "Authorization": f"Bearer {ACCESS_TOKEN}"
+    }
     max_retries = 40  # Số lần thử lại tối đa
-    retry_delay = 5  # Thời gian chờ giữa các lần thử (giây)
+    retry_delay = 5   # Thời gian chờ giữa các lần thử (giây)
 
     for attempt in range(max_retries):
-        # Gửi yêu cầu POST đến API
-        url = "https://typecast.ai/api/speak/batch/get"
-        headers = {
-            "Authorization": f"Bearer {ACCESS_TOKEN}"
-        }
         try:
-            async with session.post(url, headers=headers, json=url_voice_text) as response:
-                print(f"Response status code: {response.status}")
-                # Xử lý phản hồi từ API
-                if response.status == 200:
-                    try:
-                        result_json = await response.json()
-                        result = result_json.get("result", [])[0]
-                        audio_url = result.get("audio", {}).get("url")
-                        if audio_url:
-                            print("Audio URL found:", audio_url)
-                            return audio_url
-                    except (KeyError, IndexError, TypeError) as e:
-                        print("Error parsing JSON response:", e)
+            response = requests.post(url, headers=headers, json=url_voice_text, verify=False, timeout=10)
+            print(f"Response status code: {response.status_code}")
+
+            if response.status_code == 200:
+                try:
+                    result_json = response.json()
+                    result = result_json.get("result", [])[0]
+                    audio_url = result.get("audio", {}).get("url")
+                    if audio_url:
+                        print("Audio URL found:", audio_url)
+                        return audio_url
+                except (KeyError, IndexError, TypeError) as e:
+                    print("Error parsing JSON response:", e)
+            else:
+                print(f"Lỗi server: {response.status_code} - {response.text}")
+                
         except Exception as e:
-            print("Error occurred during API request:", e)
+            print(f"Error occurred during API request: {e}")
+        
         # Chờ trước khi thử lại
-        await asyncio.sleep(retry_delay)
+        print(f"Retrying after {retry_delay} seconds...")
+        time.sleep(retry_delay)
     return False
 
-async def get_voice_super_voice_async(session, data, text, file_name, semaphore): 
-    """ Gửi request để lấy voice (async) """
+def get_voice_super_voice(data, text, file_name):
+    """Gửi request để lấy voice (sync, dùng requests)."""
     global failed_accounts, valid_tokens
     accounts = load_accounts()
-    
-    async with semaphore:  # Sử dụng semaphore để giới hạn số kết nối đồng thời
-        for email, password in accounts:  
-            if email in failed_accounts:  
-                continue  # Bỏ qua tài khoản đã gặp lỗi trước đó
-                
-            # Sử dụng token đã lưu nếu có
-            ACCESS_TOKEN = valid_tokens.get(email)
+
+    for email, password in accounts:
+        if email in failed_accounts:
+            continue  # Bỏ qua tài khoản đã lỗi
+
+        ACCESS_TOKEN = valid_tokens.get(email)
+        if not ACCESS_TOKEN:
+            ACCESS_TOKEN = get_cookie(email, password)
             if not ACCESS_TOKEN:
-                ACCESS_TOKEN = await get_cookie_async(session, email, password)
-                if not ACCESS_TOKEN:
-                    failed_accounts.add(email)
-                    continue
-                valid_tokens[email] = ACCESS_TOKEN  # Lưu lại token hợp lệ
+                failed_accounts.add(email)
+                continue
+            valid_tokens[email] = ACCESS_TOKEN  # Lưu lại token hợp lệ
 
-            print(f"Đang sử dụng token cho {email}: {ACCESS_TOKEN[:20]}...")
-            
-            style_name_data = json.loads(data.get("style"))
-            style_name_data[0]["text"] = text
+        print(f"Đang sử dụng token cho {email}: {ACCESS_TOKEN[:20]}...")
 
-            for retry_count in range(2):  
-                try:
-                    headers = {'Authorization': f'Bearer {ACCESS_TOKEN}', 
-                               'Content-Type': 'application/json',
-                               "User-Agent": UserAgent().google,
-                               "referer":"https://typecast.ai/text-to-speech/"
-                               }
-                    async with session.post('https://typecast.ai/api/speak/batch/post', 
-                                          headers=headers, 
-                                          json=style_name_data) as response:
+        style_name_data = json.loads(data.get("style"))
+        style_name_data[0]["text"] = text
 
-                        if response.status == 200:
-                            print(f"✅ Thành công với {email}")
-                            response_json = await response.json()
-                            url = response_json.get("result", {}).get("speak_urls", [])
+        headers = {
+            'Authorization': f'Bearer {ACCESS_TOKEN}',
+            'Content-Type': 'application/json',
+            'User-Agent': UserAgent().google,
+            'Referer': 'https://typecast.ai/text-to-speech/',
+        }
 
-                            url_voice = await get_audio_url_async(session, ACCESS_TOKEN, url)
-                            print("xxxxxxxxxxxxxxxxxxx")
-                            if url_voice:
-                                async with session.get(url_voice, headers={'Authorization': f'Bearer {ACCESS_TOKEN}'}) as download_response:
-                                    if download_response.status == 200:
-                                        content = await download_response.read()
-                                        with open(file_name, 'wb') as f:
-                                            f.write(content)
-                                        print(f"✅ Đã lưu file: {file_name}")
-                                        return True
-                                    else:
-                                        print(f"⚠️ Lỗi tải file, status: {download_response.status}")
-                            
-                            failed_accounts.add(email)
-                            break
+        proxies = {
+            "https": "http://dangtmunZh:0auVrCMq@103.167.92.214:8943",
+        }
+
+        for retry_count in range(2):
+            try:
+                response = requests.post(
+                    'https://typecast.ai/api/speak/batch/post',
+                    headers=headers,
+                    json=style_name_data,
+                    verify=False,
+                    proxies=proxies,
+                    timeout=10
+                )
+                if response.status_code == 200:
+                    print(f"✅ Thành công với {email}")
+                    response_json = response.json()
+                    url = response_json.get("result", {}).get("speak_urls", [])
+
+                    url_voice = get_audio_url(ACCESS_TOKEN, url)
+                    if url_voice:
+                        download_response = requests.get(
+                            url_voice,
+                            headers={'Authorization': f'Bearer {ACCESS_TOKEN}'},
+                            verify=False,
+                            timeout=30
+                        )
+                        if download_response.status_code == 200:
+                            with open(file_name, 'wb') as f:
+                                f.write(download_response.content)
+                            print(f"✅ Đã lưu file: {file_name}")
+                            return True
                         else:
-                            print(f"❌ Lỗi {response.status}, thử lại ({retry_count+1}/2)...")
-                            await asyncio.sleep(1)
+                            print(f"⚠️ Lỗi tải file, status: {download_response.status_code}")
 
-                except Exception as e:
-                    print(f"⚠️ Lỗi: {str(e)}, thử lại ({retry_count+1}/2)...")
-                    await asyncio.sleep(1)
-                    
-        print("🚫 Đã thử hết tài khoản nhưng vẫn thất bại!")
-        return False
+                    failed_accounts.add(email)
+                    break
+                else:
+                    requests.get("https://api.zingproxy.com/getip/us/f49740492df909e449ba33bfb8585f435041bc6b")
+                    print(f"❌ Lỗi {response.status_code}, thử lại ({retry_count+1}/2)...")
+                    time.sleep(1)
 
-async def process_voice_entry_async(session, data, text_entry, video_id, task_id, worker_id, language, semaphore):
-    """Hàm xử lý giọng nói cho từng trường hợp ngôn ngữ (async)."""
+            except Exception as e:
+                requests.get("https://api.zingproxy.com/getip/us/f49740492df909e449ba33bfb8585f435041bc6b")
+                print(f"⚠️ Lỗi: {str(e)}, thử lại ({retry_count+1}/2)...")
+                time.sleep(1)
+
+    print("🚫 Đã thử hết tài khoản nhưng vẫn thất bại!")
+    return False
+
+def process_voice_entry(data, text_entry, video_id, task_id, worker_id, language):
+    """Hàm xử lý giọng nói cho từng trường hợp ngôn ngữ (sync)."""
     file_name = f'media/{video_id}/voice/{text_entry["id"]}.wav'
     success = False
-    
+
     print(f"Đang tạo giọng nói cho đoạn văn bản ID {text_entry['id']}")
-    
+
     # Xử lý ngôn ngữ tương ứng và kiểm tra kết quả tải
-    # Hiện tại chỉ hỗ trợ SUPER VOICE
     if language == 'SUPER VOICE':
-        success = await get_voice_super_voice_async(session, data, text_entry['text'], file_name, semaphore)
+        success = get_voice_super_voice(data, text_entry['text'], file_name)
 
     elif language == 'Japanese-VoiceVox':
-        success = await get_voice_japanese(data, text_entry['text'], file_name)
-    # Thêm các phương thức async cho các loại ngôn ngữ khác nếu cần
-    
+        success = get_voice_japanese(data, text_entry['text'], file_name)
+
+    # Thêm các phương thức sync cho các loại ngôn ngữ khác nếu cần
+
     # Trả về False nếu tải không thành công
     if not success:
         print(language)
         print(f"Lỗi: Không thể tạo giọng nói cho đoạn văn bản ID {text_entry['id']}")
         return False, None
-    
+
     return text_entry['id'], file_name
 
-async def display_active_downloads(active_tasks, total, stop_event):
-    """Hiển thị trạng thái tải xuống hiện tại."""
-    while not stop_event.is_set():
-        completed = sum(1 for status in active_tasks.values() if status == "completed")
-        active = sum(1 for status in active_tasks.values() if status == "active")
-        
-        print(f"\n--- TRẠNG THÁI TẢI XUỐNG ---")
-        print(f"Đã hoàn thành: {completed}/{total} ({completed/total*100:.2f}%)")
-        print(f"Đang xử lý: {active}")
-        
-        active_ids = [task_id for task_id, status in active_tasks.items() if status == "active"]
-        if active_ids:
-            print(f"ID đang xử lý: {', '.join(map(str, active_ids))}")
-        
-        await asyncio.sleep(3)
+def display_active_downloads(active_tasks, total):
+    """Hiển thị trạng thái tải xuống hiện tại (sync)."""
+    completed = sum(1 for status in active_tasks.values() if status == "completed")
+    active = sum(1 for status in active_tasks.values() if status == "active")
 
-async def download_audio_async(data, task_id, worker_id):
+    print(f"\n--- TRẠNG THÁI TẢI XUỐNG ---")
+    print(f"Đã hoàn thành: {completed}/{total} ({completed/total*100:.2f}%)")
+    print(f"Đang xử lý: {active}")
+
+    active_ids = [task_id for task_id, status in active_tasks.items() if status == "active"]
+    if active_ids:
+        print(f"ID đang xử lý: {', '.join(map(str, active_ids))}")
+
+def process_voice_entry_wrapper(data, entry, video_id, task_id, worker_id, language, active_tasks, index, result_files):
+    entry_id = entry["id"]
+    active_tasks[entry_id] = "active"
+
     try:
-        print("Đang tải giọng nói bất đồng bộ...")
+        result = process_voice_entry(data, entry, video_id, task_id, worker_id, language)
+
+        if result[0] is False:
+            active_tasks[entry_id] = "failed"
+            return False
+
+        entry_id, file_name = result
+        result_files[index] = file_name
+        active_tasks[entry_id] = "completed"
+
+        completed = sum(1 for status in active_tasks.values() if status == "completed")
+        percent_complete = (completed / len(active_tasks)) * 100
+
+        # Update trạng thái
+        update_status_video(
+            f"Đang Render : Đang tạo giọng đọc ({completed}/{len(active_tasks)}) {percent_complete:.2f}%",
+            video_id, task_id, worker_id
+        )
+
+        return True
+    except Exception as e:
+        print(f"Lỗi khi xử lý giọng đọc cho đoạn {entry_id}: {e}")
+        active_tasks[entry_id] = "failed"
+        return False
+
+def download_audio(data, task_id, worker_id):
+    try:
+        print("Đang tải giọng nói...")
         language = data.get('language')
         video_id = data.get('video_id')
         text = data.get('text_content')
-        
-        # Tải các đoạn văn bản từ `text_content`
+
+        # Parse text_content
         text_entries = json.loads(text)
         total_entries = len(text_entries)
-        
-        # Kiểm tra nếu không có entry nào
+
         if total_entries == 0:
             print("Không có đoạn văn bản nào để xử lý.")
             return True
 
-        # Tạo thư mục nếu chưa tồn tại
         os.makedirs(f'media/{video_id}/voice', exist_ok=True)
 
-        # Danh sách giữ kết quả
         result_files = [None] * total_entries
-        
-        # Theo dõi trạng thái các tác vụ
-        active_tasks = {}  # {task_id: status}
-        for i in range(total_entries):
-            active_tasks[text_entries[i]["id"]] = "pending"
-        
-        # Task hiển thị trạng thái
-        stop_display_event = asyncio.Event()
-        display_task = asyncio.create_task(display_active_downloads(active_tasks, total_entries, stop_display_event))
-        
-        # Giới hạn số lượng kết nối đồng thời
-        max_concurrent = 10  # Điều chỉnh số lượng tải xuống đồng thời
-        semaphore = asyncio.Semaphore(max_concurrent)
-        
-        # Tạo phiên HTTP chung cho tất cả các yêu cầu
-        async with aiohttp.ClientSession() as session:
-            # Hàm wrapper để cập nhật trạng thái
-            async def process_entry_with_status(index, entry):
-                entry_id = entry["id"]
-                active_tasks[entry_id] = "active"
-                
-                try:
-                    result = await process_voice_entry_async(session, data, entry, video_id, task_id, worker_id, language, semaphore)
-                    
-                    if result[0] is False:
-                        active_tasks[entry_id] = "failed"
-                        return False
-                    
-                    entry_id, file_name = result
-                    result_files[index] = file_name
-                    active_tasks[entry_id] = "completed"
-                    
-                    # Tính toán tiến độ
-                    completed = sum(1 for status in active_tasks.values() if status == "completed")
-                    percent_complete = (completed / total_entries) * 100
-                    
-                    # Cập nhật trạng thái
-                    update_status_video(
-                        f"Đang Render : Đang tạo giọng đọc ({completed}/{total_entries}) {percent_complete:.2f}%",
-                        video_id, task_id, worker_id
-                    )
-                    return True
-                except Exception as e:
-                    print(f"Lỗi khi xử lý giọng đọc cho đoạn {entry_id}: {e}")
-                    active_tasks[entry_id] = "failed"
-                    return False
-            
-            # Tạo danh sách các tác vụ
-            tasks = []
+        active_tasks = {text_entries[i]["id"]: "pending" for i in range(total_entries)}
+
+        max_workers = 10  # Số lượng luồng tối đa
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
             for idx, entry in enumerate(text_entries):
-                task = process_entry_with_status(idx, entry)
-                tasks.append(task)
-            
-            # Thực thi tất cả các tác vụ và chờ kết quả
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            
-            # Dừng hiển thị trạng thái
-            stop_display_event.set()
-            await display_task
-            
-            # Kiểm tra kết quả
-            if False in results or any(isinstance(r, Exception) for r in results):
-                update_status_video(
-                    f"Render Lỗi : {os.getenv('name_woker')} Lỗi khi tạo giọng đọc",
-                    video_id, task_id, worker_id
-                )
-                return False
-            
-            # Ghi vào input_files.txt theo đúng thứ tự
-            with open(f'media/{video_id}/input_files.txt', 'w') as file:
-                for file_name in result_files:
-                    if file_name:
-                        file.write(f"file 'voice/{os.path.basename(file_name)}'\n")
-            
-            # Cập nhật trạng thái hoàn thành
+                futures.append(executor.submit(
+                    process_voice_entry_wrapper,
+                    data, entry, video_id, task_id, worker_id, language,
+                    active_tasks, idx, result_files
+                ))
+
+            for future in as_completed(futures):
+                display_active_downloads(active_tasks, total_entries)
+
+        if any(f is False for f in [future.result() for future in futures]):
             update_status_video(
-                f"Đang Render : Đã tạo xong giọng đọc",
+                f"Render Lỗi : {os.getenv('name_woker')} Lỗi khi tạo giọng đọc",
                 video_id, task_id, worker_id
             )
-            return True
+            return False
+
+        # Ghi vào input_files.txt
+        with open(f'media/{video_id}/input_files.txt', 'w', encoding='utf-8') as file:
+            for file_name in result_files:
+                if file_name:
+                    file.write(f"file 'voice/{os.path.basename(file_name)}'\n")
+
+        update_status_video(
+            f"Đang Render : Đã tạo xong giọng đọc",
+            video_id, task_id, worker_id
+        )
+        return True
+
     except Exception as e:
         print(f"Lỗi tổng thể: {str(e)}")
         update_status_video(
@@ -1583,29 +1605,6 @@ async def download_audio_async(data, task_id, worker_id):
             video_id, task_id, worker_id
         )
         return False
-
-# Hàm wrapper để gọi từ code đồng bộ
-def download_audio(data, task_id, worker_id):
-    # Đo thời gian
-    start_time = time.time()
-    
-    # Gọi phiên bản bất đồng bộ
-    result = asyncio.run(download_audio_async(data, task_id, worker_id))
-    
-    # Tính thời gian đã sử dụng
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-    
-    # Hiển thị tổng kết
-    print(f"\n=== TÓM TẮT ===")
-    print(f"Thời gian xử lý: {elapsed_time:.2f} giây")
-    print(f"Kết quả: {'Thành công' if result else 'Thất bại'}")
-
-    print(f"{'-'*20}\n")
-    print(result)
-    print(f"{'-'*20}\n")
-    
-    return result
 
 def format_timestamp(seconds):
     """Chuyển đổi thời gian từ giây thành định dạng SRT (hh:mm:ss,ms)"""
