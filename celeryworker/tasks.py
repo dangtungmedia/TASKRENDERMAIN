@@ -1397,7 +1397,8 @@ async def get_voice_super_voice_async(session, data, text, file_name, semaphore)
                 try:
                     headers = {'Authorization': f'Bearer {ACCESS_TOKEN}', 
                                'Content-Type': 'application/json',
-                               "User-Agent": UserAgent().google
+                               "User-Agent": UserAgent().google,
+                               "referer":"https://typecast.ai/text-to-speech/"
                                }
                     async with session.post('https://typecast.ai/api/speak/batch/post', 
                                           headers=headers, 
