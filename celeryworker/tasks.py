@@ -1429,9 +1429,8 @@ def get_voice_super_voice(data, text, file_name):
         }
 
         proxies = {
-            "https": "http://dangtmunZh:0auVrCMq@103.167.92.214:8943",
+            "https": "http://dangt3VmKX:TjVYTQ04@36.50.52.132:8227",
         }
-
         for retry_count in range(2):
             try:
                 response = requests.post(
@@ -1466,12 +1465,12 @@ def get_voice_super_voice(data, text, file_name):
                     failed_accounts.add(email)
                     break
                 else:
-                    requests.get("https://api.zingproxy.com/getip/us/f49740492df909e449ba33bfb8585f435041bc6b")
+                    requests.get("https://api.zingproxy.com/getip/us/6b98b9ba88d87b5d7a9b1694d22c12a07643b598")
                     print(f"❌ Lỗi {response.status_code}, thử lại ({retry_count+1}/2)...")
                     time.sleep(1)
 
             except Exception as e:
-                requests.get("https://api.zingproxy.com/getip/us/f49740492df909e449ba33bfb8585f435041bc6b")
+                requests.get("https://api.zingproxy.com/getip/us/6b98b9ba88d87b5d7a9b1694d22c12a07643b598")
                 print(f"⚠️ Lỗi: {str(e)}, thử lại ({retry_count+1}/2)...")
                 time.sleep(1)
 
