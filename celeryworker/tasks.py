@@ -1503,7 +1503,6 @@ def request_zingproxy_if_needed():
         else:
             print(f"⏳ Chưa đủ 60s (còn {int(60 - elapsed_time)}s), không đổi IP.")
 
-
 def process_voice_entry(data, text_entry, video_id, task_id, worker_id, language):
     """Hàm xử lý giọng nói cho từng trường hợp ngôn ngữ (sync)."""
     file_name = f'media/{video_id}/voice/{text_entry["id"]}.wav'
@@ -1625,7 +1624,6 @@ def download_audio(data, task_id, worker_id):
             video_id, task_id, worker_id
         )
         return False
-
 
 def format_timestamp(seconds):
     """Chuyển đổi thời gian từ giây thành định dạng SRT (hh:mm:ss,ms)"""
