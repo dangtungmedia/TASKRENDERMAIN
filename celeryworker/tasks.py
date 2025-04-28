@@ -1591,28 +1591,22 @@ def download_audio(data, task_id, worker_id):
         result_files = [None] * total_entries
         active_tasks = {text_entries[i]["id"]: "pending" for i in range(total_entries)}
 
-        max_workers = 10  # Số lượng luồng tối đa
-
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = []
-            for idx, entry in enumerate(text_entries):
-                futures.append(executor.submit(
-                    process_voice_entry_wrapper,
-                    data, entry, video_id, task_id, worker_id, language,
-                    active_tasks, idx, result_files
-                ))
-
-            for future in as_completed(futures):
-                display_active_downloads(active_tasks, total_entries)
-
-        if any(f is False for f in [future.result() for future in futures]):
-            update_status_video(
-                f"Render Lỗi : {os.getenv('name_woker')} Lỗi khi tạo giọng đọc",
-                video_id, task_id, worker_id
+        # CHẠY TUẦN TỰ TỪNG entry
+        for idx, entry in enumerate(text_entries):
+            success = process_voice_entry_wrapper(
+                data, entry, video_id, task_id, worker_id, language,
+                active_tasks, idx, result_files
             )
-            return False
+            display_active_downloads(active_tasks, total_entries)
 
-        # Ghi vào input_files.txt
+            if not success:
+                update_status_video(
+                    f"Render Lỗi : {os.getenv('name_woker')} Lỗi khi tạo giọng đọc",
+                    video_id, task_id, worker_id
+                )
+                return False  # Nếu 1 cái lỗi thì stop luôn
+
+        # Ghi input_files.txt
         with open(f'media/{video_id}/input_files.txt', 'w', encoding='utf-8') as file:
             for file_name in result_files:
                 if file_name:
@@ -1631,8 +1625,6 @@ def download_audio(data, task_id, worker_id):
             video_id, task_id, worker_id
         )
         return False
-
-
 
 
 def format_timestamp(seconds):
