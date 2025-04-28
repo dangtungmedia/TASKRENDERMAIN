@@ -1401,37 +1401,34 @@ async def get_voice_super_voice_async(session, data, text, file_name, semaphore)
                                'Content-Type': 'application/json',
                                "User-Agent": UserAgent().google
                                }
-                    
                     proxy_url = "http://dangtw9tnW:lAlmH2qG@103.74.107.58:8311"
-                    async with session.post('https://typecast.ai/api/speak/batch/post', 
-                                          headers=headers, 
-                                          json=style_name_data,
-                                          proxy=proxy_url) as response:
+                    response = requests.post(url, headers=headers, json=payload, proxies={"https": proxy_url})
+                    response_json = response.json()
 
-                        if response.status == 200:
-                            print(f"✅ Thành công với {email}")
-                            response_json = await response.json()
-                            url = response_json.get("result", {}).get("speak_urls", [])
+                    if response.status == 200:
+                        print(f"✅ Thành công với {email}")
+                        response_json = response.json()
+                        url = response_json.get("result", {}).get("speak_urls", [])
 
-                            url_voice = await get_audio_url_async(session, ACCESS_TOKEN, url)
-                            print("xxxxxxxxxxxxxxxxxxx")
-                            if url_voice:
-                                async with session.get(url_voice, headers={'Authorization': f'Bearer {ACCESS_TOKEN}'}) as download_response:
-                                    if download_response.status == 200:
-                                        content = await download_response.read()
-                                        with open(file_name, 'wb') as f:
-                                            f.write(content)
-                                        print(f"✅ Đã lưu file: {file_name}")
-                                        return True
-                                    else:
-                                        print(f"⚠️ Lỗi tải file, status: {download_response.status}")
-                            
-                            failed_accounts.add(email)
-                            break
-                        else:
-                            request_zingproxy_if_needed()
-                            print(f"❌ Lỗi {response.status}, thử lại ({retry_count+1}/2)...")
-                            await asyncio.sleep(1)
+                        url_voice = await get_audio_url_async(session, ACCESS_TOKEN, url)
+                        print("xxxxxxxxxxxxxxxxxxx")
+                        if url_voice:
+                            async with session.get(url_voice, headers={'Authorization': f'Bearer {ACCESS_TOKEN}'}) as download_response:
+                                if download_response.status == 200:
+                                    content = await download_response.read()
+                                    with open(file_name, 'wb') as f:
+                                        f.write(content)
+                                    print(f"✅ Đã lưu file: {file_name}")
+                                    return True
+                                else:
+                                    print(f"⚠️ Lỗi tải file, status: {download_response.status}")
+                        
+                        failed_accounts.add(email)
+                        break
+                    else:
+                        request_zingproxy_if_needed()
+                        print(f"❌ Lỗi {response.status}, thử lại ({retry_count+1}/2)...")
+                        await asyncio.sleep(1)
 
                 except Exception as e:
                     request_zingproxy_if_needed()
