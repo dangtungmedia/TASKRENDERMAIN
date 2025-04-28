@@ -11,8 +11,10 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     wget \
     unrar-free \
+    ca-certificates \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
 
 # Optional: Add fonts if necessary
 COPY fonts/* /usr/share/fonts/truetype/custom/
