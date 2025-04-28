@@ -55,6 +55,8 @@ SERVER=os.environ.get('SERVER')
 ACCESS_TOKEN = None
 failed_accounts: Set[str] = set()
 valid_tokens: Dict[str, str] = {}
+last_zingproxy_request_time = 0
+zingproxy_lock = threading.Lock()
 
 logging.basicConfig(filename='render_errors.log', level=logging.ERROR,
                     format='%(asctime)s - %(levelname)s - %(message)s')
@@ -1351,7 +1353,6 @@ def get_cookie(email, password):
         print(f"Lỗi đăng nhập với tài khoản {email}: {str(e)}")
         return None
     
-    
 def load_accounts(filename="accounts.txt"):
     """ Đọc danh sách tài khoản từ file và xáo trộn """
     accounts = []
@@ -1429,7 +1430,7 @@ def get_voice_super_voice(data, text, file_name):
         }
 
         proxies = {
-            "https": "http://dangt3VmKX:TjVYTQ04@36.50.52.132:8227",
+            "https": "http://dangtw9tnW:lAlmH2qG@103.74.107.58:8311",
         }
         for retry_count in range(2):
             try:
@@ -1465,17 +1466,43 @@ def get_voice_super_voice(data, text, file_name):
                     failed_accounts.add(email)
                     break
                 else:
-                    requests.get("https://api.zingproxy.com/getip/us/6b98b9ba88d87b5d7a9b1694d22c12a07643b598")
+                    request_zingproxy_if_needed()
                     print(f"❌ Lỗi {response.status_code}, thử lại ({retry_count+1}/2)...")
                     time.sleep(1)
 
             except Exception as e:
-                requests.get("https://api.zingproxy.com/getip/us/6b98b9ba88d87b5d7a9b1694d22c12a07643b598")
+                request_zingproxy_if_needed()
                 print(f"⚠️ Lỗi: {str(e)}, thử lại ({retry_count+1}/2)...")
                 time.sleep(1)
 
     print("🚫 Đã thử hết tài khoản nhưng vẫn thất bại!")
     return False
+
+def request_zingproxy_if_needed():
+    global last_zingproxy_request_time
+
+    with zingproxy_lock:
+        current_time = time.time()
+        elapsed_time = current_time - last_zingproxy_request_time
+
+        if elapsed_time >= 70:
+            try:
+                print("🌀 Gửi request đổi IP...")
+                response = requests.get(
+                    "https://api.zingproxy.com/getip/vn/9032fa367d3fe63bc3b64a0da030d8c9b5efc344",
+                    timeout=10
+                )
+                if response.status_code == 200:
+                    print("✅ Đã đổi IP thành công.")
+                else:
+                    print(f"⚠️ Đổi IP thất bại, status: {response.status_code}")
+            except Exception as e:
+                print(f"❌ Lỗi khi đổi IP: {e}")
+
+            last_zingproxy_request_time = current_time  # Cập nhật thời gian cuối cùng
+        else:
+            print(f"⏳ Chưa đủ 60s (còn {int(60 - elapsed_time)}s), không đổi IP.")
+
 
 def process_voice_entry(data, text_entry, video_id, task_id, worker_id, language):
     """Hàm xử lý giọng nói cho từng trường hợp ngôn ngữ (sync)."""
@@ -1604,6 +1631,9 @@ def download_audio(data, task_id, worker_id):
             video_id, task_id, worker_id
         )
         return False
+
+
+
 
 def format_timestamp(seconds):
     """Chuyển đổi thời gian từ giây thành định dạng SRT (hh:mm:ss,ms)"""

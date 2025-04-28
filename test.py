@@ -40,7 +40,7 @@ def send_typecast_request():
     print("Payload:", payload_str)
     
     proxies = {
-        "https": "http://dangt3VmKX:TjVYTQ04@36.50.52.132:8227",
+        "https": "http://dangtw9tnW:lAlmH2qG@103.74.107.58:8311",
     }
     # Gửi request
     try:
