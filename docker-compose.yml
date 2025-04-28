@@ -7,7 +7,7 @@ services:
     command: python Start_celery_app.py
     volumes:
       - .:/app
-    network_mode: "host"
+    network_mode: host
     deploy:
       resources:
         reservations:
@@ -15,6 +15,9 @@ services:
             - driver: nvidia
               count: all # Sử dụng tất cả GPU có sẵn, hoặc có thể chỉ định số lượng cụ thể như 1,2,...
               capabilities: [ gpu ]
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     runtime: nvidia
     environment:
       - NVIDIA_VISIBLE_DEVICES=all # Hoặc chỉ định GPU cụ thể như "0" hoặc "0,1"

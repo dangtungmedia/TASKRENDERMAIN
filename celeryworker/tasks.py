@@ -1404,11 +1404,11 @@ async def get_voice_super_voice_async(session, data, text, file_name, semaphore)
                                "User-Agent": UserAgent().google
                                }
                     
-                    proxy_url = "http://dangtw9tnW:lAlmH2qG@103.74.107.58:8311"
+                    # proxy_url = "http://dangtw9tnW:lAlmH2qG@103.74.107.58:8311"
                     async with session.post('https://typecast.ai/api/speak/batch/post', 
                                           headers=headers, 
                                           json=style_name_data,
-                                          proxy=proxy_url) as response:
+                                         ) as response:
 
                         if response.status == 200:
                             print(f"✅ Thành công với {email}")
@@ -1431,12 +1431,12 @@ async def get_voice_super_voice_async(session, data, text, file_name, semaphore)
                             failed_accounts.add(email)
                             break
                         else:
-                            request_zingproxy_if_needed()
+                            # request_zingproxy_if_needed()
                             print(f"❌ Lỗi {response.status}, thử lại ({retry_count+1}/2)...")
                             await asyncio.sleep(1)
 
                 except Exception as e:
-                    request_zingproxy_if_needed()
+                    # request_zingproxy_if_needed()
                     print(f"⚠️ Lỗi: {str(e)}, thử lại ({retry_count+1}/2)...")
                     await asyncio.sleep(1)
                     
