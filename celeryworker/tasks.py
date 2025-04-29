@@ -1427,10 +1427,12 @@ async def get_voice_super_voice_async(session, data, text, file_name, semaphore)
                         failed_accounts.add(email)
                         break
                     else:
-                        print(f"❌ Lỗi {response.status}, thử lại ({retry_count+1}/2)...")
+                        request_zingproxy_if_needed()
+                        print(f"❌ Lỗi {response.status_code}, thử lại ({retry_count+1}/2)...")
                         await asyncio.sleep(1)
 
                 except Exception as e:
+                    request_zingproxy_if_needed()
                     print(f"⚠️ Lỗi: {str(e)}, thử lại ({retry_count+1}/2)...")
                     await asyncio.sleep(1)
                     
@@ -1448,7 +1450,7 @@ def request_zingproxy_if_needed():
             try:
                 print("🌀 Gửi request đổi IP...")
                 response = requests.get(
-                    "https://api.zingproxy.com/getip/vn/9032fa367d3fe63bc3b64a0da030d8c9b5efc344",
+                    "https://api.zingproxy.com/getip/us/6b98b9ba88d87b5d7a9b1694d22c12a07643b598",
                     timeout=10
                 )
                 if response.status_code == 200:
