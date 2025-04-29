@@ -1404,7 +1404,7 @@ async def get_voice_super_voice_async(session, data, text, file_name, semaphore)
                                "User-Agent": UserAgent().google
                                }
                     url = "https://typecast.ai/api/speak/batch/post"
-                    proxy_url = "http://dangtw9tnW:lAlmH2qG@103.74.107.58:8311"
+                    proxy_url = "http://dangt3VmKX:TjVYTQ04@36.50.52.132:8227"
                     response = requests.post(url, headers=headers, json=style_name_data, proxies={"https": proxy_url})
                     if response.status_code == 200:
                         print(f"✅ Thành công với {email}")
@@ -1427,12 +1427,10 @@ async def get_voice_super_voice_async(session, data, text, file_name, semaphore)
                         failed_accounts.add(email)
                         break
                     else:
-                        request_zingproxy_if_needed()
                         print(f"❌ Lỗi {response.status}, thử lại ({retry_count+1}/2)...")
                         await asyncio.sleep(1)
 
                 except Exception as e:
-                    request_zingproxy_if_needed()
                     print(f"⚠️ Lỗi: {str(e)}, thử lại ({retry_count+1}/2)...")
                     await asyncio.sleep(1)
                     
@@ -1446,7 +1444,7 @@ def request_zingproxy_if_needed():
         current_time = time.time()
         elapsed_time = current_time - last_zingproxy_request_time
 
-        if elapsed_time >= 70:
+        if elapsed_time >= 60:
             try:
                 print("🌀 Gửi request đổi IP...")
                 response = requests.get(
