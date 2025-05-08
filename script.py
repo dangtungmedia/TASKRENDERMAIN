@@ -6,12 +6,12 @@ from fake_useragent import UserAgent
 import requests
 print("test")
 
-async def send_typecast_request():
+def send_typecast_request():
     url = "https://typecast.ai/api/speak/batch/post"
     ua = UserAgent()
 
     headers = {
-        "authorization": "Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6IjkwOTg1NzhjNDg4MWRjMDVlYmYxOWExNWJhMjJkOGZkMWFiMzRjOGEiLCJ0eXAiOiJKV1QifQ.eyJfaWQiOiI2N2U2NjFkNTJmMmE2ZWQ0MDRjM2FjMjgiLCJhcHByb3ZlZCI6dHJ1ZSwiYXV0aHR5cGUiOiJmaXJlYmFzZSIsInByb3ZpZGVyIjoicGFzc3dvcmQiLCJpc19wYWlkIjpmYWxzZSwiaXNzIjoiaHR0cHM6Ly9zZWN1cmV0b2tlbi5nb29nbGUuY29tL3R5cGVjYXN0LXByb2QtNTBjYjEiLCJhdWQiOiJ0eXBlY2FzdC1wcm9kLTUwY2IxIiwiYXV0aF90aW1lIjoxNzQ1OTEzOTg0LCJ1c2VyX2lkIjoiTmpXbTBBdDE4V1ZHaDBuVEdpUzBManBpVjRQMiIsInN1YiI6Ik5qV20wQXQxOFdWR2gwblRHaVMwTGpwaVY0UDIiLCJpYXQiOjE3NDU5MTM5ODQsImV4cCI6MTc0NTkxNzU4NCwiZW1haWwiOiJkdnMyMjg4OEBqaW9zby5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiZmlyZWJhc2UiOnsiaWRlbnRpdGllcyI6eyJlbWFpbCI6WyJkdnMyMjg4OEBqaW9zby5jb20iXX0sInNpZ25faW5fcHJvdmlkZXIiOiJjdXN0b20ifX0.b-N9csLpf92Yl5Qwyv59pSF22KKOKldIwLhhweollMTmBezi9Hdc1c86hJdPqbSKoHrnlv9YnPitS85OPZkQ6mEwir44kl0SqAap_tqBF0T4xpbePNG4mHE9L8dtuFrYhYpwPxOKQm5uEPE_7LUwTKyFrDBaPZT7c5MZNI-WrM-GpNxQp41lmOVkHOd5cgTlMqYQmqp_kmr9k6CHUi9dphm0woJ_uSNjCy-15RNAhbOopgsRltljJBfiGdTMrJ1Iq7Ep4Yd2HDot_NHMiSqxWqMLLbAvWIFPV3er-dpX2ItZVxLjIZJSLowasMu2Hbka2DaWu9rQ2tSelrOtvms3fA",  # (token rút gọn)
+        "authorization": "Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6IjU5MWYxNWRlZTg0OTUzNjZjOTgyZTA1MTMzYmNhOGYyNDg5ZWFjNzIiLCJ0eXAiOiJKV1QifQ.eyJfaWQiOiI2N2U0YjhlOGFkOGE5ZDQ3OWU0NzFlNjYiLCJhcHByb3ZlZCI6dHJ1ZSwiYXV0aHR5cGUiOiJmaXJlYmFzZSIsInByb3ZpZGVyIjoicGFzc3dvcmQiLCJpc19wYWlkIjpmYWxzZSwiaXNzIjoiaHR0cHM6Ly9zZWN1cmV0b2tlbi5nb29nbGUuY29tL3R5cGU0YjhlOGFkOGE5ZDQ3OWU0NzFlNjYiLCJhcHByb3ZlZCI6dHJ1ZSwiYXV0aHR5cGUiOiJmaXJlYmFzZSIsInByb3ZpZGVyIjoicGFzc3dvcmQiLCJpc19wYWlkIjpmYWxzZSwiaXNzIjoiaHR0cHM6Ly9zZWN1cmV0b2tlbi5nb29nbGUuY29tL3R5cGVjYXN0LXByb2QtNTBjYjEiLCJhdWQiOiJ0eXBlY2FzdC1wcm9kLTUwY2IxIiwiYXV0aF90aW1lIjoxNzQ2NzE1MTk1LCJ1c2VyX2lkIjoieUk1UFhvTU52cldEc0JrWTYzcTF3R3V1TVZtMSIsInN1YiI6InlJNVBYb01OdnJXRHNCa1k2M3Exd0d1dUVjYXN0LXByb2QtNTBjYjEiLCJhdWQiOiJ0eXBlY2FzdC1wcm9kLTUwY2IxIiwiYXV0aF90aW1lIjoxNzQ2NzE1MTk1LCJ1c2VyX2lkIjoieUk1UFhvTU52cldEc0JrWTYzcTF3R3V1TVZtMSIsInN1YiI6InlJNVBYb01OdnJXRHNCa1k2M3Exd0d1dU1WbTEiLCJpYXQiOjE3NDY3MTUxOTUsImV4cCI6MTc0NjcxODc5NSwiZW1haWwiOiJlcW4yNjk0M0BqaW9zby5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiZmlyZWJhc2UiOnsiaWRlbnRpdGllcyI6eyJlbWFpbCI6WyJlcW4yNjk0M0BqaW9zby1WbTEiLCJpYXQiOjE3NDY3MTUxOTUsImV4cCI6MTc0NjcxODc5NSwiZW1haWwiOiJlcW4yNjk0M0BqaW9zby5jb20iLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiZmlyZWJhc2UiOnsiaWRlbnRpdGllcyI6eyJlbWFpbCI6WyJlcW4yNjk0M0BqaW9zby5jb20iXX0sInNpZ25faW5fcHJvdmlkZXIiOiJjdXN0b20ifX0.Cgpn473SHeIlbmET7tHz_l3W2WP6jsdJcuFeE-7ISaAAABLRVkuf7-NAeqq8_S78O3A2zWVSnBeXFGnJbhxy0jaYAAeMeGXTfyh-AH0ojA6nuzNB8LUUZhMx-t0Xhq3t-gyswKmx_H-S99rxNtkzVkeK2hy2FCg_OBI6KuDWV9toxQql196xxmg_Nv4mdOUhdzRNCwDGJmqF1b-trNV0z9cD1r837dMgSMLbSkJyO9bLY6Eb4P3yDcbBfNbJlF4GjeMdfvk55MEQRNB9siZSL7rMD6vOe32mkz31EJsrp8FNeOhciHqvFV3O_nZ03tEskf3fJtuV8ko1kN4bOBcSww",  # (token rút gọn)
         "Content-Type": "application/json",
         "User-Agent": ua.google
     }
@@ -32,9 +32,8 @@ async def send_typecast_request():
             "adjust_lastword": 0
         }
     ]
-
     # Proxy config
-    proxy_url = "http://dangtw9tnW:lAlmH2qG@103.74.107.58:8311"
+    proxy_url = "http://zbaUmdangt:l5wbPok2@103.171.1.93:8362"
 
     try:
         
@@ -46,9 +45,9 @@ async def send_typecast_request():
     except Exception as e:
         print(f"❌ Lỗi khi gửi request: {e}")
 
-async def main():
+def main():
     for i in range(10):
-        await send_typecast_request()
+        send_typecast_request()
         print(f"Request {i+1} sent.")
-        await asyncio.sleep(3)  # Đúng async sleep, không block event loop
-asyncio.run(main())
+        time.sleep(3)  # Đúng async sleep, không block event loop
+main()
