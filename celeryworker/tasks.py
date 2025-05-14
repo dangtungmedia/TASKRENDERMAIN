@@ -1535,7 +1535,7 @@ async def download_audio_async(data, task_id, worker_id):
         display_task = asyncio.create_task(display_active_downloads(active_tasks, total_entries, stop_display_event))
         
         # Giới hạn số lượng kết nối đồng thời
-        max_concurrent = 10  # Điều chỉnh số lượng tải xuống đồng thời
+        max_concurrent = 20  # Điều chỉnh số lượng tải xuống đồng thời
         semaphore = asyncio.Semaphore(max_concurrent)
         
         # Tạo phiên HTTP chung cho tất cả các yêu cầu
