@@ -63,7 +63,6 @@ logging.basicConfig(filename='render_errors.log', level=logging.ERROR,
 
 def delete_directory(video_id):
     directory_path = f'media/{video_id}'
-    
     # Kiểm tra nếu thư mục tồn tại
     if os.path.exists(directory_path):
         # Kiểm tra xem thư mục có trống không
@@ -564,7 +563,7 @@ def create_video_file(data, task_id, worker_id):
         '-safe', '0',                       # Cho phép đường dẫn không an toàn (chẳng hạn như file với đường dẫn tuyệt đối)
         '-i', input_files_video_path,       # Đường dẫn tệp video đầu vào (danh sách video)
         '-vf', f"subtitles={ass_file_path}",# Đường dẫn tệp phụ đề ASS
-        "-c:v", "libx265",
+        "-c:v", "hevc_nvenc",
         "-y",
         f"media/{video_id}/{name_video}.mp4" # Đường dẫn và tên file đầu ra
     ]
@@ -964,10 +963,10 @@ async def cut_and_scale_video_random_async(input_video, path_video, path_audio, 
                 "-map", "[outv]",
                 "-map", "2:a",
                 "-t", str(duration),
-                "-c:v", "libx265",
+                "-c:v", "hevc_nvenc",
                 "-c:a", "aac",  # Đảm bảo codec âm thanh là AAC
                 "-b:a", "192k",  # Bitrate âm thanh hợp lý
-                "-preset", "ultrafast",
+                "-preset", "hq",
                 "-pix_fmt", "yuv420p",
                 "-y",
                 path_video
@@ -983,10 +982,10 @@ async def cut_and_scale_video_random_async(input_video, path_video, path_audio, 
                 "-map", "1:a",
                 "-t", str(duration),
                 '-r', '24',
-                "-c:v", "libx265",
+                "-c:v", "hevc_nvenc",
                 "-c:a", "aac",  # Đảm bảo codec âm thanh là AAC
                 "-b:a", "192k",  # Bitrate âm thanh hợp lý
-                "-preset", "ultrafast",
+                "-preset", "hq",
                 "-pix_fmt", "yuv420p",  # Ghi đè file đầu ra nếu đã tồn tại
                 "-y",
                 path_video  # File đầu ra
@@ -1065,10 +1064,10 @@ async def image_to_video_zoom_in_async(image_file, path_video, path_audio, scale
             "-map", "[outv]",
             "-map", "2:a",  # Ánh xạ tất cả stream âm thanh từ file audio thứ 3
             "-t", str(duration),  # Đặt thời lượng video bằng thời lượng audio
-            "-c:v", "libx265",
+            "-c:v", "hevc_nvenc",
             "-c:a", "aac",  # Đảm bảo codec âm thanh là AAC
             "-b:a", "192k",  # Bitrate âm thanh hợp lý
-            "-preset", "ultrafast",
+            "-preset", "hq",
             "-pix_fmt", "yuv420p",
             path_video
         ]
@@ -1086,10 +1085,10 @@ async def image_to_video_zoom_in_async(image_file, path_video, path_audio, scale
             "-map", "0:v",  # Đơn giản hóa ánh xạ video
             "-map", "1:a",  # Đơn giản hóa ánh xạ audio
             "-t", str(duration),
-            "-c:v", "libx265",
+            "-c:v", "hevc_nvenc",
             "-c:a", "aac",
             "-b:a", "192k",
-            "-preset", "ultrafast",
+            "-preset", "hq",
             "-pix_fmt", "yuv420p",
             path_video
         ]
@@ -1159,7 +1158,7 @@ async def image_to_video_zoom_out_async(image_file, path_video, path_audio, scal
                     "-filter_complex", 
                     f"[0:v]format=yuv420p,scale=8000:-1,zoompan=z='zoom+0.002':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=240:s={scale_width}x{scale_height}:fps=24[bg];[1:v]scale={scale_width}:{scale_height},fps=24[overlay_scaled];[bg][overlay_scaled]overlay=format=auto,format=yuv420p[outv]",
                     "-r", "24", "-map", "[outv]", "-map", "2:a", "-t", str(duration),
-                    "-c:v", "libx265", "-c:a", "aac", "-b:a", "192k", "-preset", "ultrafast", "-pix_fmt", "yuv420p", path_video
+                    "-c:v", "hevc_nvenc", "-c:a", "aac", "-b:a", "192k", "-preset", "hq", "-pix_fmt", "yuv420p", path_video
                 ]
             else:
                 # Trường hợp 2: Không sử dụng overlay video, sử dụng file audio riêng biệt
@@ -1168,7 +1167,7 @@ async def image_to_video_zoom_out_async(image_file, path_video, path_audio, scal
                     "-i", image_file, "-i", path_audio,  # Path audio làm input thứ 2
                     "-vf", f"format=yuv420p,scale=8000:-1,zoompan=z='zoom+0.005':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=240:s={scale_width}x{scale_height},fps=24",
                     "-r", "24", "-map", "0:v", "-map", "1:a", "-t", str(duration),
-                    "-c:v", "libx265", "-c:a", "aac", "-b:a", "192k", "-preset", "ultrafast", "-pix_fmt", "yuv420p", path_video
+                    "-c:v", "hevc_nvenc", "-c:a", "aac", "-b:a", "192k", "-preset", "hq", "-pix_fmt", "yuv420p", path_video
                 ]
             
             # Chỉ hiển thị lệnh để debug
@@ -2100,6 +2099,7 @@ def create_or_reset_directory(directory_path):
     except Exception as e:
         print(f"Lỗi: {e}")
         return False
+
 # Tính vị trí và kích thước mới của video crop
 def parse_crop_data(crop_data_str):
     # Tách chuỗi thành các phần tử và chuyển thành dictionary
