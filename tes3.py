@@ -1,23 +1,30 @@
-from pytube import YouTube
+import re
+from packaging.version import parse as parse_version
 
-# URL video YouTube
-video_url = 'https://www.youtube.com/watch?v=aKEatGCJUGM'  # Thay VIDEO_ID bằng ID thật
+def filter_latest_versions_from_file(input_path='requirements.txt', output_path='requirements_cleaned.txt'):
+    latest_versions = {}
 
-# Tải đối tượng YouTube
-yt = YouTube(video_url)
+    with open(input_path, 'r', encoding='utf-8') as file:
+        for line in file:
+            line = line.strip()
 
-# Kiểm tra phụ đề có sẵn
-print("Các phụ đề có sẵn:")
-print(yt.captions)
+            # Bỏ qua dòng rỗng hoặc là link git
+            if not line or line.startswith('#') or '@' in line:
+                continue
 
-# Lấy phụ đề tiếng Anh (nếu có)
-caption = yt.captions.get_by_language_code('en')
+            # Lấy package và version
+            match = re.match(r'^([a-zA-Z0-9_\-]+)==([\w\.\+]+)$', line)
+            if match:
+                pkg, version = match.groups()
+                if (pkg not in latest_versions) or (parse_version(version) > parse_version(latest_versions[pkg])):
+                    latest_versions[pkg] = version
 
-if caption:
-    # Lưu phụ đề dạng .srt (SubRip)
-    srt_captions = caption.generate_srt_captions()
-    with open("subtitle_en.srt", "w", encoding="utf-8") as f:
-        f.write(srt_captions)
-    print("Đã lưu phụ đề vào 'subtitle_en.srt'")
-else:
-    print("Không tìm thấy phụ đề tiếng Anh.")
+    # Ghi ra file kết quả
+    with open(output_path, 'w', encoding='utf-8') as f:
+        for pkg, version in sorted(latest_versions.items()):
+            f.write(f"{pkg}=={version}\n")
+
+    print(f"✅ Đã tạo file sạch: {output_path}")
+
+# ▶️ Gọi hàm
+filter_latest_versions_from_file()

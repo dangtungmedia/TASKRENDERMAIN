@@ -47,6 +47,15 @@ import botocore
 from fake_useragent import UserAgent
 from urllib.parse import urlparse
 from time import sleep
+import cv2
+import numpy as np
+import os
+import random
+from urllib.parse import urlparse, parse_qs
+import whisper
+import torch
+from youtube_transcript_api import YouTubeTranscriptApi
+from pathlib import Path
 # Nạp biến môi trường từ file .env
 load_dotenv()
 
@@ -114,7 +123,7 @@ def render_video(self, data):
     update_status_video("Đang Render : Đang xử lý video render", data['video_id'], task_id, worker_id)
     success = create_or_reset_directory(f'media/{video_id}')
     
-    if not os.path.exists("video_screen") :
+    if not os.path.exists("VIDEO_SCREEN") :
         update_status_video(f"Render Lỗi : {os.getenv('name_woker')}  Thiếu các tệp video  và  video_screen ", data['video_id'], task_id, worker_id)
         return
 
@@ -140,9 +149,7 @@ def render_video(self, data):
             shutil.rmtree(f'media/{video_id}')
             return
         print(f"Tải xuống âm thanh thành công {success}!")
-        print(f"Tải xuống âm thanh thành công {success}!")
-    time.sleep(1)
-    update_status_video("Đang Render : Nối giọng đọc và chèn nhạc nền thành công", data['video_id'], task_id, worker_id)
+    update_status_video("Đang Render : tạo xong giọng đọc", data['video_id'], task_id, worker_id)
     # Tạo video
     success = create_video_lines(data, task_id, worker_id)
     if not success:
@@ -177,8 +184,8 @@ def render_video_reupload(self, data):
     # Kiểm tra xem task có bị hủy không ngay từ đầu
     update_status_video("Đang Render : Đang xử lý video render", data['video_id'], task_id, worker_id)
     
-    if not os.path.exists("video")  and not os.path.exists("video_screen") :
-        update_status_video(f"Render Lỗi : {os.getenv('name_woker')}  Thiếu các tệp video  và  video_screen ", data['video_id'], task_id, worker_id)
+    if not os.path.exists("video"):
+        update_status_video(f"Render Lỗi : {os.getenv('name_woker')}  Thiếu các tệp video", data['video_id'], task_id, worker_id)
         return
     
     success = create_or_reset_directory(f'media/{video_id}')
@@ -209,102 +216,185 @@ def seconds_to_hms(seconds):
     seconds = seconds % 60  # Tính giây
     return f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}"  # Định dạng: HH:MM:SS
 
-def cread_test_reup(data, task_id, worker_id):
-    video_dir = "video"
-    video_id = data.get('video_id')
-    video_path = f'media/{video_id}/cache.mp4'
 
-    time_video = get_video_duration(video_path)
-    speed = data.get('speed_video_crop', 1.0)
-    if isinstance(speed, Decimal):
-        speed = float(speed)
-    duration = time_video / speed  # Thời gian video sau khi thay đổi tốc độ
-    video_files = [os.path.join(video_dir, f) for f in os.listdir(video_dir) if f.endswith(('.mp4', '.mkv', '.avi'))]
-    
-    if not video_files:
-        update_status_video(f"Render Lỗi: {os.getenv('name_woker')} không có video để render ", video_id, task_id, worker_id)
-        return None
-
-    selected_videos = []
-    total_duration = 0
-    remaining_videos = set(video_files)
-    update_status_video("Đang Render: Đang Chọn video random", video_id, task_id, worker_id)
-
-    while total_duration < duration and remaining_videos:
-        video = random.choice(list(remaining_videos))  # Chọn ngẫu nhiên video
-        remaining_videos.remove(video)  # Loại khỏi danh sách chưa chọn
-        try:
-            video_duration = get_video_duration(video)
-            selected_videos.append(video)
-            total_duration += video_duration
-            # Chuyển đổi tổng thời gian từ giây thành giờ:phút:giây
-            formatted_duration = seconds_to_hms(total_duration)
-            formatted_limit = seconds_to_hms(duration)
-            update_status_video(f"Đang Render: Thời lượng videos {formatted_duration}/{formatted_limit}", video_id, task_id, worker_id)
-        except Exception as e:
-            print(f"Lỗi khi đọc thời gian video {video}: {e}")
-
-    if total_duration < duration:
-        update_status_video(f"Render Lỗi: {os.getenv('name_woker')} Không thể chọn đủ video để vượt qua thời lượng yêu cầu.", video_id, task_id, worker_id)
-        return None
-    update_status_video("Đang Render: Đã chọn xong video nối", video_id, task_id, worker_id)
-    
-    # Tạo tệp danh sách video để nối
-    output_file_list = f'media/{video_id}/output_files.txt'
-    os.makedirs(os.path.dirname(output_file_list), exist_ok=True)
-    
+def extract_audio(video_path, output_audio_path):
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", video_path,
+        "-vn",
+        "-acodec", "copy",  # hoặc "libmp3lame" nếu muốn .mp3
+        output_audio_path
+    ]
     try:
-        with open(output_file_list, 'w') as f:
-            for video in selected_videos:
-                full_path = os.path.abspath(video)
-                if os.path.exists(full_path):
-                    f.write(f"file '{full_path}'\n")
-                else:
-                    print(f"Warning: Video không tồn tại - {full_path}")
+        subprocess.run(cmd, check=True, stderr=subprocess.PIPE, text=True)
+        print(f"✅ Đã tách âm thanh: {output_audio_path}")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Lỗi khi tách audio: {e}")
+
+
+def write_srt(segments, file_path="output.srt"):
+    def format_timestamp(seconds: float):
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        milliseconds = int((seconds - int(seconds)) * 1000)
+        return f"{hours:02}:{minutes:02}:{secs:02},{milliseconds:03}"
+
+    with open(file_path, "w", encoding="utf-8") as f:
+        for i, segment in enumerate(segments, start=1):
+            f.write(f"{i}\n")
+            f.write(f"{format_timestamp(segment['start'])} --> {format_timestamp(segment['end'])}\n")
+            text = segment['text'].strip().replace("\n", " ")
+            f.write(f"{text}\n\n")
+
+
+def extract_video_id(youtube_url):
+    """
+    Trích xuất video ID từ URL YouTube.
+    Ví dụ: https://www.youtube.com/watch?v=lLEJDZY7ZrQ → lLEJDZY7ZrQ
+           https://youtu.be/lLEJDZY7ZrQ → lLEJDZY7ZrQ
+    """
+    try:
+        parsed_url = urlparse(youtube_url)
+        
+        # Dạng rút gọn: https://youtu.be/VIDEO_ID
+        if parsed_url.hostname in ["youtu.be"]:
+            return parsed_url.path[1:]
+
+        # Dạng chuẩn: https://www.youtube.com/watch?v=VIDEO_ID
+        if parsed_url.hostname in ["www.youtube.com", "youtube.com"]:
+            query = parse_qs(parsed_url.query)
+            return query.get("v", [None])[0]
+
+        return None
     except Exception as e:
-        update_status_video(f"Render Lỗi: {os.getenv('name_woker')} Không thể tạo danh sách video {str(e)}", video_id, task_id, worker_id)
-        return False
+        print("❌ Lỗi khi trích xuất video ID:", e)
+        return None
 
-    # Lấy dữ liệu crop từ tham số
-    video_path_audio = f'media/{video_id}/cache.mp4'
-    crop_data_str = data.get('location_video_crop')
-    crop_data = parse_crop_data(crop_data_str)
-    original_resolution = (640, 360)  # Độ phân giải gốc
-    target_resolution = (1280, 720)  # Độ phân giải mục tiêu
-    left, top, width, height = calculate_new_position(crop_data, original_resolution, target_resolution)
-    opacity = 0.6
-    speed = data.get('speed_video_crop', 1.0)
-    pitch = data.get('pitch_video_crop', 1.0)
-    name_video = data.get('name_video')
-    output_path = f'media/{video_id}/{name_video}.mp4'
+def get_first_sound_offset(video_id, max_retries=5, retry_delay=2.0):
+    """
+    Trích xuất thời gian bắt đầu dòng phụ đề đầu tiên từ video YouTube.
+    Tự động thử lại nếu lỗi xảy ra.
+    """
+    for attempt in range(1, max_retries + 1):
+        try:
+            transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
+            for transcript in transcripts:
+                language_code = transcript.language_code
+                break  # Dùng ngôn ngữ đầu tiên tìm được
 
-    # Lệnh ffmpeg để nối video và áp dụng các hiệu ứng
-    ffmpeg_command = [
-        "ffmpeg",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", output_file_list,
-        "-i", video_path_audio,
-        "-filter_complex", (
-            f"[1:v]fps=24,scale=1280:720,setpts={1/speed}*PTS,crop={width}:{height}:{left}:{top},format=rgba,colorchannelmixer=aa={opacity}[blurred];"
-            f"[1:a]asetrate={44100 * pitch},atempo={speed}[a];"
-            f"[0:v][blurred]overlay={left}:{top}[outv]"
-        ),
-        "-map", "[outv]",
-        "-map", "[a]",
-        "-r", "24",
-        "-c:v", "hevc_nvenc",  # Codec video
+            transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=[language_code])
+            first_start = transcript[0]['start']
+            print(f"📋 Giọng nói bắt đầu tại: {first_start:.2f} giây")
+            return first_start
+
+        except (TranscriptsDisabled, NoTranscriptFound) as e:
+            print(f"❌ Không có phụ đề cho video này: {e}")
+            return 0.0
+
+        except Exception as e:
+            print(f"⚠️ Lỗi khi lấy phụ đề (lần {attempt}/{max_retries}): {e}")
+            if attempt < max_retries:
+                time.sleep(retry_delay)
+            else:
+                print("❌ Đã thử quá số lần cho phép. Trả về 0.")
+                return 0.0
+
+
+def transcribe_audio(data,audio_file,SUBTITLE_FILE):
+    """Chuyển đổi âm thanh thành văn bản và cộng offset vào phụ đề."""
+    try:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        video_url = data.get('url_video_youtube')
+        video_id = extract_video_id(video_url)
+        print(f"🔍 Đang xử lý video ID: {video_id}")
+        # ✅ Tìm thời gian offset đoạn có tiếng
+        offset = get_first_sound_offset(video_id)
+
+        model = whisper.load_model("base").to(device)
+        result = model.transcribe(audio_file, task="transcribe", verbose=True)
+
+        # ✅ Cộng offset vào tất cả các đoạn phụ đề
+        for seg in result["segments"]:
+            seg["start"] += offset
+            seg["end"] += offset
+
+        # ✅ Ghi file srt chuẩn
+        write_srt(result["segments"], SUBTITLE_FILE)
+        print("📁 Đã lưu phụ đề có offset vào:", SUBTITLE_FILE)
+
+    except ImportError:
+        print("⚠️ Không thể tải mô hình Whisper. Kiểm tra cài đặt.")
+
+
+def get_duration(filepath):
+    """Lấy duration của file media bằng ffprobe."""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                str(filepath)
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        return float(result.stdout.strip())
+    except (subprocess.SubprocessError, ValueError):
+        print(f"⚠️ Không thể lấy duration của {filepath}")
+        return 0.0
+
+def get_video_files(video_dir, audio_duration):
+    """Random chọn danh sách video đủ dài để khớp với audio (với đường dẫn tuyệt đối)."""
+    video_files = []
+    total_duration = 0.0
+    video_extensions = (".mp4", ".mov", ".mkv")
+
+    all_videos = list(Path(video_dir).glob("*"))
+    random.shuffle(all_videos)  # 🔀 Trộn ngẫu nhiên thứ tự video
+
+    with ThreadPoolExecutor() as executor:
+        durations = list(executor.map(get_duration, all_videos))
+
+    for file, dur in zip(all_videos, durations):
+        if file.suffix.lower() in video_extensions and dur > 0:
+            abs_path = str(file.resolve())  # ✅ Lấy đường dẫn tuyệt đối
+            video_files.append(abs_path)
+            total_duration += dur
+            print(f"✔️ Thêm: {file.name} ({dur:.2f}s)")
+            if total_duration >= audio_duration:
+                break
+
+    return video_files, total_duration
+
+def create_concat_list(video_files, concat_list_file):
+    """Tạo file danh sách để nối video."""
+    with open(concat_list_file, "w", encoding="utf-8") as f:
+        f.writelines(f"file '{vf}'\n" for vf in video_files)
+
+def burn_subtitles(data,concat_list, audio_file, subtitle_file, output_file,task_id, worker_id):
+    """Ghép phụ đề vào video bằng ffmpeg."""
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", "concat", "-safe", "0", "-i", concat_list,  # video từ danh sách
+        "-i", audio_file,  # audio mới
+        "-vf", f"subtitles={subtitle_file}:force_style='Fontsize=30,Bold=1,Outline=1,Shadow=1,MarginV=40'",
+        "-map", "0:v:0",  # chỉ lấy video từ input 0
+        "-map", "1:a:0",  # chỉ lấy audio từ input 1
+        "-c:v", "libx265",  # Codec video
         "-c:a", "aac",  # Đảm bảo codec âm thanh là AAC
         "-b:a", "192k",  # Bitrate âm thanh hợp lý
-        "-preset", "hq",
+        "-preset", "ultrafast",  
         "-pix_fmt", "yuv420p",  # Định dạng pixel
         "-y",
-        output_path
+        "-shortest",  # dừng video khi audio hoặc video kết thúc (ngắn hơn)
+        output_file
     ]
-    
     try:
         # Khởi tạo lệnh ffmpeg và đọc output
-        with subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True) as process:
+        with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True) as process:
             total_duration = None
             progress_bar = None
 
@@ -331,25 +421,210 @@ def cread_test_reup(data, task_id, worker_id):
                             progress_bar.refresh()
                             percentage = int((current_time / total_duration) * 100)
                             if percentage <= 100:
+                                print(f"Rendering progress: {percentage}%")
                                 update_status_video(f"Đang Render: xuất video thành công {percentage}%", data['video_id'], task_id, worker_id)
                         except ValueError as e:
                             print(f"Skipping invalid time format: {time_str}, error: {e}")
                             print(f"Lỗi khi chạy lệnh ffmpeg: {str(e)}")
-                            logging.error(f"FFmpeg Error: {str(e)}")
+                            
             process.wait()
     except Exception as e:
         print(f"Lỗi khi chạy lệnh ffmpeg: {str(e)}")
-        logging.error(f"FFmpeg Error: {e}")
-        update_status_video(f"Render Lỗi: {os.getenv('name_woker')} Lỗi khi thực hiện lệnh ffmpeg - {str(e)}", video_id, task_id, worker_id)
+        return False
+
+def cread_test_reup(data, task_id, worker_id):
+    video_id = data.get('video_id')
+    video_path = f'media/{video_id}/cache.mp4'
+
+    AUDIO_FILE = f'media/{video_id}/audio_cache.m4a'
+    SUBTITLE_FILE = f'media/{video_id}/subtitles.srt'
+    VIDEO_DIR ='video'
+    extract_audio(video_path, AUDIO_FILE)
+    transcribe_audio(data,AUDIO_FILE, SUBTITLE_FILE)
+    audio_duration = get_duration(AUDIO_FILE)
+
+    video_files, total_video_duration = get_video_files(VIDEO_DIR, audio_duration)
+    if not video_files or total_video_duration < audio_duration:
         return False
     
-    # Kiểm tra tệp kết quả
-    if os.path.exists(output_path) and os.path.getsize(output_path) > 0 and get_video_duration(output_path):
+
+    print(video_files)
+    concat_list = f"media/{video_id}/concat_list.txt"
+    create_concat_list(video_files, concat_list)
+
+    name_video = data.get('name_video')
+    FINAL_WITH_SUBS = f'media/{video_id}/{name_video}.mp4'
+
+    if os.path.exists(SUBTITLE_FILE):
+        print("📜 Ghép phụ đề (burn-in)...")
+        burn_subtitles(data,concat_list, AUDIO_FILE, SUBTITLE_FILE, FINAL_WITH_SUBS,task_id, worker_id)
+    else:
+        print(f"⚠️ Không tìm thấy file phụ đề: {SUBTITLE_FILE}")
+
+    if os.path.exists(concat_list):
+        os.remove(concat_list)
+
+    if os.path.exists(FINAL_WITH_SUBS) and os.path.getsize(FINAL_WITH_SUBS) > 0 and get_video_duration(FINAL_WITH_SUBS):
         update_status_video("Đang Render: Xuất video xong ! chuẩn bị upload lên sever", data['video_id'], task_id, worker_id)
         return True
     else:
         update_status_video(f"Render Lỗi: {os.getenv('name_woker')} Lỗi xuất video bằng ffmpeg vui lòng chạy lại ,file xuất lỗi", data['video_id'], task_id, worker_id)
         return False
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    # time_video = get_video_duration(video_path)
+    # speed = data.get('speed_video_crop', 1.0)
+    # if isinstance(speed, Decimal):
+    #     speed = float(speed)
+    # duration = time_video / speed  # Thời gian video sau khi thay đổi tốc độ
+    # video_files = [os.path.join(video_dir, f) for f in os.listdir(video_dir) if f.endswith(('.mp4', '.mkv', '.avi'))]
+    
+    # if not video_files:
+    #     update_status_video(f"Render Lỗi: {os.getenv('name_woker')} không có video để render ", video_id, task_id, worker_id)
+    #     return None
+
+    # selected_videos = []
+    # total_duration = 0
+    # remaining_videos = set(video_files)
+    # update_status_video("Đang Render: Đang Chọn video random", video_id, task_id, worker_id)
+
+    # while total_duration < duration and remaining_videos:
+    #     video = random.choice(list(remaining_videos))  # Chọn ngẫu nhiên video
+    #     remaining_videos.remove(video)  # Loại khỏi danh sách chưa chọn
+    #     try:
+    #         video_duration = get_video_duration(video)
+    #         selected_videos.append(video)
+    #         total_duration += video_duration
+    #         # Chuyển đổi tổng thời gian từ giây thành giờ:phút:giây
+    #         formatted_duration = seconds_to_hms(total_duration)
+    #         formatted_limit = seconds_to_hms(duration)
+    #         update_status_video(f"Đang Render: Thời lượng videos {formatted_duration}/{formatted_limit}", video_id, task_id, worker_id)
+    #     except Exception as e:
+    #         print(f"Lỗi khi đọc thời gian video {video}: {e}")
+
+    # if total_duration < duration:
+    #     update_status_video(f"Render Lỗi: {os.getenv('name_woker')} Không thể chọn đủ video để vượt qua thời lượng yêu cầu.", video_id, task_id, worker_id)
+    #     return None
+    # update_status_video("Đang Render: Đã chọn xong video nối", video_id, task_id, worker_id)
+    
+    # # Tạo tệp danh sách video để nối
+    # output_file_list = f'media/{video_id}/output_files.txt'
+    # os.makedirs(os.path.dirname(output_file_list), exist_ok=True)
+    
+    # try:
+    #     with open(output_file_list, 'w') as f:
+    #         for video in selected_videos:
+    #             full_path = os.path.abspath(video)
+    #             if os.path.exists(full_path):
+    #                 f.write(f"file '{full_path}'\n")
+    #             else:
+    #                 print(f"Warning: Video không tồn tại - {full_path}")
+    # except Exception as e:
+    #     update_status_video(f"Render Lỗi: {os.getenv('name_woker')} Không thể tạo danh sách video {str(e)}", video_id, task_id, worker_id)
+    #     return False
+
+    # # Lấy dữ liệu crop từ tham số
+    # video_path_audio = f'media/{video_id}/cache.mp4'
+    # crop_data_str = data.get('location_video_crop')
+    # crop_data = parse_crop_data(crop_data_str)
+    # original_resolution = (640, 360)  # Độ phân giải gốc
+    # target_resolution = (1280, 720)  # Độ phân giải mục tiêu
+    # left, top, width, height = calculate_new_position(crop_data, original_resolution, target_resolution)
+    # opacity = 0.6
+    # speed = data.get('speed_video_crop', 1.0)
+    # pitch = data.get('pitch_video_crop', 1.0)
+    # name_video = data.get('name_video')
+    # output_path = f'media/{video_id}/{name_video}.mp4'
+
+    # # Lệnh ffmpeg để nối video và áp dụng các hiệu ứng
+    # ffmpeg_command = [
+    #     "ffmpeg",
+    #     "-f", "concat",
+    #     "-safe", "0",
+    #     "-i", output_file_list,
+    #     "-i", video_path_audio,
+    #     "-filter_complex", (
+    #         f"[1:v]fps=24,scale=1280:720,setpts={1/speed}*PTS,crop={width}:{height}:{left}:{top},format=rgba,colorchannelmixer=aa={opacity}[blurred];"
+    #         f"[1:a]asetrate={44100 * pitch},atempo={speed}[a];"
+    #         f"[0:v][blurred]overlay={left}:{top}[outv]"
+    #     ),
+    #     "-map", "[outv]",
+    #     "-map", "[a]",
+    #     "-r", "24",
+    #     "-c:v", "hevc_nvenc",  # Codec video
+    #     "-c:a", "aac",  # Đảm bảo codec âm thanh là AAC
+    #     "-b:a", "192k",  # Bitrate âm thanh hợp lý
+    #     "-preset", "hq",
+    #     "-pix_fmt", "yuv420p",  # Định dạng pixel
+    #     "-y",
+    #     output_path
+    # ]
+    
+    # try:
+    #     # Khởi tạo lệnh ffmpeg và đọc output
+    #     with subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True) as process:
+    #         total_duration = None
+    #         progress_bar = None
+
+    #         # Read the stderr output line by line
+    #         for line in process.stderr:
+    #             print(f"ffmpeg output: {line.strip()}")  # Log the ffmpeg output for debugging
+    #             if "Duration" in line:
+    #                 try:
+    #                     duration_str = line.split(",")[0].split("Duration:")[1].strip()
+    #                     h, m, s = map(float, duration_str.split(":"))
+    #                     total_duration = int(h * 3600 + m * 60 + s)
+    #                     progress_bar = tqdm(total=total_duration, desc="Rendering", unit="s")
+    #                 except ValueError as e:
+    #                     print(f"Error parsing duration: {e}")
+    #                     continue
+
+    #             if "time=" in line and progress_bar:
+    #                 time_str = line.split("time=")[1].split(" ")[0].strip()
+    #                 if time_str != 'N/A':
+    #                     try:
+    #                         h, m, s = map(float, time_str.split(":"))
+    #                         current_time = int(h * 3600 + m * 60 + s)
+    #                         progress_bar.n = current_time
+    #                         progress_bar.refresh()
+    #                         percentage = int((current_time / total_duration) * 100)
+    #                         if percentage <= 100:
+    #                             update_status_video(f"Đang Render: xuất video thành công {percentage}%", data['video_id'], task_id, worker_id)
+    #                     except ValueError as e:
+    #                         print(f"Skipping invalid time format: {time_str}, error: {e}")
+    #                         print(f"Lỗi khi chạy lệnh ffmpeg: {str(e)}")
+    #                         logging.error(f"FFmpeg Error: {str(e)}")
+    #         process.wait()
+    # except Exception as e:
+    #     print(f"Lỗi khi chạy lệnh ffmpeg: {str(e)}")
+    #     logging.error(f"FFmpeg Error: {e}")
+    #     update_status_video(f"Render Lỗi: {os.getenv('name_woker')} Lỗi khi thực hiện lệnh ffmpeg - {str(e)}", video_id, task_id, worker_id)
+    #     return False
+    
+    # # Kiểm tra tệp kết quả
+    # if os.path.exists(output_path) and os.path.getsize(output_path) > 0 and get_video_duration(output_path):
+    #     update_status_video("Đang Render: Xuất video xong ! chuẩn bị upload lên sever", data['video_id'], task_id, worker_id)
+    #     return True
+    # else:
+    #     update_status_video(f"Render Lỗi: {os.getenv('name_woker')} Lỗi xuất video bằng ffmpeg vui lòng chạy lại ,file xuất lỗi", data['video_id'], task_id, worker_id)
+    #     return False
 
 def select_videos_by_total_duration(file_path, min_duration):
     # Đọc dữ liệu từ tệp JSON
@@ -878,57 +1153,456 @@ async def check_file_type_async(file_name):
     else:
         return "image"
 
-async def process_video_segment_async(data, text_entry, data_sub, i, video_id, task_id, worker_id):
-    try:
-        # Tính thời lượng của đoạn video
-        if data.get('file-srt'):
-            start_time, end_time = data_sub[i]
-            duration = convert_to_seconds(end_time) - convert_to_seconds(start_time)
-        else:
-            # duration = get_audio_duration(f'media/{video_id}/voice/{text_entry["id"]}.wav')
-            path_audio = f'media/{video_id}/voice/{text_entry["id"]}.wav'
-        out_file = f'media/{video_id}/video/{text_entry["id"]}.mp4'
-        file = get_filename_from_url(text_entry.get('url_video', ''))
-        
-        # Kiểm tra đường dẫn file
-        if not file:
-            update_status_video(
-                f"Render Lỗi : {os.getenv('name_woker')} Đường dẫn url không hợp lệ",
-                video_id, task_id, worker_id
-            )
-            raise FileNotFoundError(f"File not found for URL: {text_entry.get('url_video')}")
-        
-        path_file = f'media/{video_id}/image/{file}'
 
-        print(f"Input file: {path_file}")
-        # Kiểm tra loại file
-        file_type = await check_file_type_async(path_file)
-        if file_type not in ["video", "image"]:
-            update_status_video(
-                f"Render Lỗi : {os.getenv('name_woker')} Loại file không hợp lệ",
-                video_id, task_id, worker_id
-            )
-            raise ValueError(f"Unsupported file type: {file_type} for {path_file}")
-        
-        # Xử lý video hoặc ảnh
-        if file_type == "video":
-            print("cut and scale video")
-            await cut_and_scale_video_random_async(path_file, out_file, path_audio, 1920, 1080, 'video_screen')
-        elif file_type == "image":
-            random_choice = random.choice([True,False])
-            if random_choice:
-                print("Zoom in")
-                await image_to_video_zoom_in_async(path_file, out_file, path_audio, 1920, 1080, 'video_screen')
-            else:
-                print("Zoom out")
-                await image_to_video_zoom_out_async(path_file, out_file, path_audio, 1920, 1080, 'video_screen')
-        return True
-    except Exception as e:
-        print(f"An unexpected error occurred: {e}")
-        update_status_video(f"Render Lỗi : lỗi xử lý tổng quát video {e}", video_id, task_id, worker_id)
-        return False
+
+def get_random_subfolder(parent_dir="VIDEO_SCREEN"):
+    # Lấy danh sách tất cả thư mục con
+    subfolders = [f for f in os.listdir(parent_dir) if os.path.isdir(os.path.join(parent_dir, f))]
+
+    if not subfolders:
+        raise ValueError("❌ Không có thư mục con nào trong VIDEO_SCREEN.")
+
+    # Chọn một thư mục ngẫu nhiên
+    chosen = random.choice(subfolders)
+    return os.path.join(parent_dir, chosen)
+
+def resize_image_to_frame(image_path, frame_width=1920, frame_height=1080, mode="min"):
+    """
+    Resize ảnh giữ nguyên tỉ lệ, với 2 chế độ:
+        - 'min': đảm bảo cả hai chiều >= frame (phóng to nếu cần)
+        - 'max': đảm bảo cả hai chiều <= frame (thu nhỏ nếu cần)
+    """
+    img = cv2.imread(image_path)
+    if img is None:
+        raise ValueError("Không thể đọc ảnh.")
+
+    h, w = img.shape[:2]
+    scale_w = frame_width / w
+    scale_h = frame_height / h
+
+    if mode == "min":
+        scale = max(scale_w, scale_h)
+    elif mode == "max":
+        scale = min(scale_w, scale_h)
+    else:
+        raise ValueError("Mode phải là 'min' hoặc 'max'.")
+
+    new_w = int(w * scale + 0.5)
+    new_h = int(h * scale + 0.5)
+
+    resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+    return resized
+
+def overlay_rgba_onto_rgb(background, overlay_rgba, x=0, y=0):
+    """
+    Lồng ảnh RGBA trong suốt lên ảnh RGB tại vị trí (x, y)
+    """
+    b_h, b_w = background.shape[:2]
+    o_h, o_w = overlay_rgba.shape[:2]
+
+    # Cắt phần hợp lệ nếu overlay vượt nền
+    if x + o_w > b_w:
+        o_w = b_w - x
+    if y + o_h > b_h:
+        o_h = b_h - y
+
+    overlay_rgb = overlay_rgba[:o_h, :o_w, :3]
+    mask = overlay_rgba[:o_h, :o_w, 3:] / 255.0  # alpha từ 0 → 1
+
+    # Blend ảnh theo alpha
+    background_crop = background[y:y+o_h, x:x+o_w]
+    blended = background_crop * (1 - mask) + overlay_rgb * mask
+    background[y:y+o_h, x:x+o_w] = blended.astype(np.uint8)
+
+    return background
+
+def create_zoom_in_reverse_video(image_path, output_path, duration=20, fps=24, frame_width=1920, frame_height=1080):
+    value = random.choice([True, False,True])
+    image = resize_image_to_frame(image_path, frame_width, frame_height, mode="min")
+    h, w = image.shape[:2]
+    total_frames = int(duration * fps)
+    out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (frame_width, frame_height))
+
+    if value:
+        random_folder = get_random_subfolder("VIDEO_SCREEN")
+        overlay_png_list = sorted([
+            os.path.join(random_folder, f)
+            for f in os.listdir(random_folder)
+            if f.lower().endswith(".png")
+        ])
+        png_count = len(overlay_png_list)
+
+    for i in range(total_frames):
+        scale = 1.4 - (0.4 * i / (total_frames - 1))
+        resized_w = int(w * scale)
+        resized_h = int(h * scale)
+        interpolation = cv2.INTER_AREA if scale < 1.0 else cv2.INTER_LINEAR
+        resized = cv2.resize(image, (resized_w, resized_h), interpolation=interpolation)
+
+        x_offset = (frame_width - resized_w) // 2
+        y_offset = (frame_height - resized_h) // 2
+
+        if x_offset < 0 or y_offset < 0:
+            x_start = max((resized_w - frame_width) // 2, 0)
+            y_start = max((resized_h - frame_height) // 2, 0)
+            base_frame = resized[y_start:y_start + frame_height, x_start:x_start + frame_width]
+        else:
+            base_frame = np.zeros((frame_height, frame_width, 3), dtype=np.uint8)
+            base_frame[y_offset:y_offset + resized_h, x_offset:x_offset + resized_w] = resized
+
+        # ✅ Chỉ overlay nếu value == True
+        if value:
+            idx = min(i, png_count - 1)
+            overlay_rgba = cv2.imread(overlay_png_list[idx], cv2.IMREAD_UNCHANGED)
+            if overlay_rgba is not None and overlay_rgba.shape[2] == 4:
+                base_frame = overlay_rgba_onto_rgb(base_frame, overlay_rgba)
+
+        out.write(base_frame)
+
+    out.release()
+    print(f"✅ Video đã tạo: {output_path}")
+
+def create_zoom_out_reverse_video(image_path, output_path, duration=20, fps=24, frame_width=1920, frame_height=1080):
+    """
+    Tạo hiệu ứng zoom out (100% → 140%) và lồng ảnh PNG từ SCREEN_06 (có alpha).
+    """
+    value = random.choice([True, False,True])
+    image = resize_image_to_frame(image_path, frame_width, frame_height, mode="min")
+    h, w = image.shape[:2]
+    total_frames = int(duration * fps)
+    out_size = (frame_width, frame_height)
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(output_path, fourcc, fps, out_size)
+
+    # Đọc danh sách PNG overlay
+    if value:
+        random_folder = get_random_subfolder("VIDEO_SCREEN")
+        overlay_png_list = sorted([
+            os.path.join(random_folder, f)
+            for f in os.listdir(random_folder)
+            if f.lower().endswith(".png")
+        ])
+        png_count = len(overlay_png_list)
+
+    for i in range(total_frames):
+        # ✅ SCALE đúng từ 1.0 → 1.4
+        scale = 1.0 + (0.4 * i / (total_frames - 1))
+
+        resized_w = int(w * scale)
+        resized_h = int(h * scale)
+        interpolation = cv2.INTER_AREA if scale < 1.0 else cv2.INTER_LINEAR
+        resized = cv2.resize(image, (resized_w, resized_h), interpolation=interpolation)
+
+        # Căn giữa hoặc crop vào khung 1920x1080
+        x_offset = (frame_width - resized_w) // 2
+        y_offset = (frame_height - resized_h) // 2
+
+        if x_offset < 0 or y_offset < 0:
+            x_start = max((resized_w - frame_width) // 2, 0)
+            y_start = max((resized_h - frame_height) // 2, 0)
+            base_frame = resized[y_start:y_start + frame_height, x_start:x_start + frame_width]
+        else:
+            base_frame = np.zeros((frame_height, frame_width, 3), dtype=np.uint8)
+            base_frame[y_offset:y_offset + resized_h, x_offset:x_offset + resized_w] = resized
+
+        # ✅ Chỉ overlay nếu value == True
+        if value:
+            idx = min(i, png_count - 1)
+            overlay_rgba = cv2.imread(overlay_png_list[idx], cv2.IMREAD_UNCHANGED)
+            if overlay_rgba is not None and overlay_rgba.shape[2] == 4:
+                base_frame = overlay_rgba_onto_rgb(base_frame, overlay_rgba)
+
+        out.write(base_frame)
+
+    out.release()
+    print(f"✅ Video đã tạo: {output_path}")
+
+def create_parallax_left_video(image_path, output_path, duration=10, fps=24, frame_width=1920, frame_height=1080):
+    value = random.choice([True, False,True])
+    total_frames = int(duration * fps)  # Tổng số frame
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Định dạng video MP4
+    out = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))  # Video output
     
-async def cut_and_scale_video_random_async(input_video, path_video, path_audio, scale_width, scale_height, overlay_video_dir):
+    # Giả sử bạn có hàm resize_and_crop và resize_and_limit đã được định nghĩa
+    image_1 = resize_image_to_frame(image_path, frame_width=frame_width*1.4, frame_height=frame_height*1.4) # Ảnh lớn (resize cho phù hợp với video)
+    image_2 = resize_image_to_frame(image_path, frame_width=int(frame_width * 0.6), frame_height=int(frame_height * 0.6),mode="max")  # Ảnh nhỏ
+    
+
+    blur_strength = 41  # Độ mạnh của Gaussian blur
+    blurred_background = cv2.GaussianBlur(image_1, (blur_strength, blur_strength), 0)
+    
+    # Thêm border cho ảnh nhỏ
+    image_2_with_border = cv2.copyMakeBorder(image_2, 5, 5, 5, 5, cv2.BORDER_CONSTANT, value=(255, 255, 255))
+    
+    # Kích thước của ảnh lớn và ảnh nhỏ sau khi border
+    height_1, width_1 = blurred_background.shape[:2]
+    height_2, width_2 = image_2_with_border.shape[:2]
+    
+    # Tính toán quãng đường di chuyển của nền mờ
+    total_move = width_1 - frame_width
+    move_per_frame_bg = total_move / total_frames  # Di chuyển mỗi frame cho nền mờ
+    
+    # Tính toán quãng đường di chuyển của ảnh nhỏ
+    total_move_img = frame_width - width_2
+    move_per_frame_img = total_move_img / total_frames  # Di chuyển mỗi frame cho ảnh nhỏ
+
+
+    # Đọc danh sách PNG overlay
+    if value:
+        random_folder = get_random_subfolder("VIDEO_SCREEN")
+        overlay_png_list = sorted([
+            os.path.join(random_folder, f)
+            for f in os.listdir(random_folder)
+            if f.lower().endswith(".png")
+        ])
+        png_count = len(overlay_png_list)
+    
+    for frame in range(total_frames):
+        # Tính toán vị trí di chuyển của nền mờ (lúc này di chuyển ngược lại - từ trái sang phải)
+        current_x_bg = int(frame * move_per_frame_bg)  # Vị trí X của nền mờ
+        
+        # Tính toán vị trí di chuyển của ảnh nhỏ
+        current_x_img = int(frame * move_per_frame_img)  # Vị trí X của ảnh nhỏ
+        
+        # Tính toán vị trí cắt nền mờ sao cho vừa với video
+        total_1 = (height_1 - frame_height) // 2  # Để căn giữa ảnh lớn
+        cropped_background = blurred_background[total_1:total_1 + frame_height, current_x_bg:current_x_bg + frame_width]
+        
+        # Tính toán vị trí ảnh nhỏ trên nền mờ (căn giữa trên nền)
+        total_2 = (frame_height - height_2) // 2  # Để căn giữa ảnh nhỏ trên nền
+        
+        base_frame = cropped_background.copy()
+        # Lồng ảnh nhỏ vào nền mờ
+        base_frame[total_2: total_2 + height_2, current_x_img:current_x_img + width_2] = image_2_with_border
+        
+        
+        # ✅ Chỉ overlay nếu value == True
+        if value:
+            idx = min(frame, png_count - 1)
+            overlay_rgba = cv2.imread(overlay_png_list[idx], cv2.IMREAD_UNCHANGED)
+            if overlay_rgba is not None and overlay_rgba.shape[2] == 4:
+                base_frame = overlay_rgba_onto_rgb(base_frame, overlay_rgba)
+
+        out.write(base_frame)
+    
+    # Giải phóng video writer và đóng cửa sổ OpenCV
+    out.release()
+
+def create_parallax_right_video(image_path, output_path, duration=10, fps=24, frame_width=1920, frame_height=1080):
+    value = random.choice([True, False,True])
+    total_frames = int(duration * fps)  # Tổng số frame
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Định dạng video MP4
+    out = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))  # Video output
+    
+    # Giả sử bạn có hàm resize_and_crop và resize_and_limit đã được định nghĩa
+    image_1 = resize_image_to_frame(image_path, frame_width=frame_width*1.4, frame_height=frame_height*1.4) # Ảnh lớn (resize cho phù hợp với video)
+    image_2 = resize_image_to_frame(image_path, frame_width=int(frame_width * 0.6), frame_height=int(frame_height * 0.6),mode="max")  # Ảnh nhỏ
+    
+
+    blur_strength = 41  # Độ mạnh của Gaussian blur
+    blurred_background = cv2.GaussianBlur(image_1, (blur_strength, blur_strength), 0)
+    
+    # Thêm border cho ảnh nhỏ
+    image_2_with_border = cv2.copyMakeBorder(image_2, 5, 5, 5, 5, cv2.BORDER_CONSTANT, value=(255, 255, 255))
+    
+    # Kích thước của ảnh lớn và ảnh nhỏ sau khi border
+    height_1, width_1 = blurred_background.shape[:2]
+    height_2, width_2 = image_2_with_border.shape[:2]
+    
+    # Tính toán quãng đường di chuyển của nền mờ
+    total_move = width_1 - frame_width
+    move_per_frame_bg = total_move / total_frames  # Di chuyển mỗi frame cho nền mờ
+    
+    # Tính toán quãng đường di chuyển của ảnh nhỏ
+    total_move_img = frame_width - width_2
+    move_per_frame_img = total_move_img / total_frames  # Di chuyển mỗi frame cho ảnh nhỏ
+
+
+    if value:
+        random_folder = get_random_subfolder("VIDEO_SCREEN")
+        overlay_png_list = sorted([
+            os.path.join(random_folder, f)
+            for f in os.listdir(random_folder)
+            if f.lower().endswith(".png")
+        ])
+        png_count = len(overlay_png_list)
+    
+    for frame in range(total_frames):
+        # Tính toán vị trí di chuyển của nền mờ (di chuyển từ phải qua trái)
+        current_x_bg = int((total_frames - frame) * move_per_frame_bg)  # Vị trí X của nền mờ từ phải qua trái
+        
+        # Tính toán vị trí di chuyển của ảnh nhỏ (di chuyển từ phải qua trái)
+        current_x_img = int((total_frames - frame) * move_per_frame_img)  # Vị trí X của ảnh nhỏ từ phải qua trái
+        
+        # Tính toán vị trí cắt nền mờ sao cho vừa với video
+        total_1 = (height_1 - frame_height) // 2  # Để căn giữa ảnh lớn
+        cropped_background = blurred_background[total_1:total_1 + frame_height, current_x_bg:current_x_bg + frame_width]
+        
+        # Tính toán vị trí ảnh nhỏ trên nền mờ (căn giữa trên nền)
+        total_2 = (frame_height - height_2) // 2  # Để căn giữa ảnh nhỏ trên nền
+        
+        base_frame = cropped_background.copy()
+        # Lồng ảnh nhỏ vào nền mờ
+        base_frame[total_2: total_2 + height_2, current_x_img:current_x_img + width_2] = image_2_with_border
+        
+        
+        # ✅ Chỉ overlay nếu value == True
+        if value:
+            idx = min(frame, png_count - 1)
+            overlay_rgba = cv2.imread(overlay_png_list[idx], cv2.IMREAD_UNCHANGED)
+            if overlay_rgba is not None and overlay_rgba.shape[2] == 4:
+                base_frame = overlay_rgba_onto_rgb(base_frame, overlay_rgba)
+
+        out.write(base_frame)
+    
+    # Giải phóng video writer và đóng cửa sổ OpenCV
+    out.release()
+
+def create_zoom_in_video_with_background(image_path, output_path, duration=10, fps=30, frame_width=1920, frame_height=1080):
+    value = random.choice([True, False,True])
+    total_frames = int(duration * fps)  # Tổng số frame
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Định dạng v
+    out = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))  # Video output
+
+    # Resize ảnh lớn (resize cho phù hợp với video)
+    image_1 = resize_image_to_frame(image_path, frame_width=frame_width, frame_height=frame_height) # Ảnh lớn (resize cho phù hợp với video)
+    image_2 = resize_image_to_frame(image_path, frame_width=frame_width, frame_height=frame_height,mode="max")  # Ảnh nhỏ
+
+
+    # Hiệu ứng zoom cho nền (từ 1.4 về 1.0)
+    start_scale_bg = 1.4
+    end_scale_bg = 1.0
+    
+    # Hiệu ứng zoom cho ảnh nhỏ (từ 0.8 về 0.5)
+    start_scale_img = 0.6
+    end_scale_img = 0.8
+    blur_strength = 41  # Độ mạnh của Gaussian blur
+
+    blurred_background = cv2.GaussianBlur(image_1, (blur_strength, blur_strength), 0)
+    image_2_with_border = cv2.copyMakeBorder(image_2, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=(255, 255, 255))
+
+
+    # Kích thước của ảnh lớn và ảnh nhỏ sau khi border
+    height_1, width_1 = blurred_background.shape[:2]
+    height_2, width_2 = image_2_with_border.shape[:2]
+
+    if value:
+        random_folder = get_random_subfolder("VIDEO_SCREEN")
+        overlay_png_list = sorted([
+            os.path.join(random_folder, f)
+            for f in os.listdir(random_folder)
+            if f.lower().endswith(".png")
+        ])
+        png_count = len(overlay_png_list)
+
+    for frame in range(total_frames):
+        # Tính tỷ lệ zoom cho ảnh nền và ảnh nhỏ tại frame hiện tại
+        scale_bg = start_scale_bg - (frame / total_frames) * (start_scale_bg - end_scale_bg)  # Zoom out cho nền
+        scale_img = start_scale_img + (frame / total_frames) * (end_scale_img - start_scale_img)  # Zoom in cho ảnh nhỏ
+        
+        # Thay đổi kích thước ảnh nền và ảnh nhỏ theo tỷ lệ
+        resized_bg = cv2.resize(blurred_background, (int(width_1 * scale_bg), int(height_1 * scale_bg)))
+        resized_small = cv2.resize(image_2_with_border, (int(width_2 * scale_img), int(height_2 * scale_img)))
+        
+        # Cắt phần trung tâm của ảnh nền để phù hợp với kích thước video
+        start_x_bg = (resized_bg.shape[1] - frame_width) // 2
+        start_y_bg = (resized_bg.shape[0] - frame_height) // 2
+        cropped_bg = resized_bg[start_y_bg:start_y_bg + frame_height, start_x_bg:start_x_bg + frame_width]
+        
+        # Cắt phần ảnh nhỏ để căn giữa
+        start_x_small = (frame_width - resized_small.shape[1]) // 2
+        start_y_small = (frame_height - resized_small.shape[0]) // 2
+        
+        # Tạo frame kết hợp giữa ảnh nền và ảnh nhỏ
+        base_frame = cropped_bg.copy()
+        base_frame[start_y_small:start_y_small + resized_small.shape[0], start_x_small:start_x_small + resized_small.shape[1]] = resized_small
+        
+        # ✅ Chỉ overlay nếu value == True
+        if value:
+            idx = min(frame, png_count - 1)
+            overlay_rgba = cv2.imread(overlay_png_list[idx], cv2.IMREAD_UNCHANGED)
+            if overlay_rgba is not None and overlay_rgba.shape[2] == 4:
+                base_frame = overlay_rgba_onto_rgb(base_frame, overlay_rgba)
+
+        out.write(base_frame)
+    
+    # Giải phóng đối tượng VideoWriter
+    out.release()
+    print(f"Video đã được tạo thành công tại: {output_path}")
+
+def create_zoom_out_video_with_background(image_path, output_path, duration=10, fps=24, frame_width=1920, frame_height=1080):
+    value = random.choice([True, False,True])
+    total_frames = int(duration * fps)  # Tổng số frame
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Định dạng video MP4
+    out = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))  # Video output
+
+    # Resize ảnh lớn (resize cho phù hợp với video)
+    image_1 = resize_image_to_frame(image_path, frame_width=frame_width, frame_height=frame_height) # Ảnh lớn (resize cho phù hợp với video)
+    image_2 = resize_image_to_frame(image_path, frame_width=frame_width, frame_height=frame_height,mode="max") # Ảnh nhỏ
+
+
+    # Hiệu ứng zoom cho nền (từ 1.4 về 1.0)
+    start_scale_bg = 1.0
+    end_scale_bg = 1.4
+    
+    # Hiệu ứng zoom cho ảnh nhỏ (từ 0.8 về 0.5)
+    start_scale_img = 0.8
+    end_scale_img = 0.6
+    blur_strength = 41  # Độ mạnh của Gaussian blur
+
+    blurred_background = cv2.GaussianBlur(image_1, (blur_strength, blur_strength), 0)
+    image_2_with_border = cv2.copyMakeBorder(image_2, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=(255, 255, 255))
+
+
+    # Kích thước của ảnh lớn và ảnh nhỏ sau khi border
+    height_1, width_1 = blurred_background.shape[:2]
+    height_2, width_2 = image_2_with_border.shape[:2]
+
+    if value:
+        random_folder = get_random_subfolder("VIDEO_SCREEN")
+        overlay_png_list = sorted([
+            os.path.join(random_folder, f)
+            for f in os.listdir(random_folder)
+            if f.lower().endswith(".png")
+        ])
+        png_count = len(overlay_png_list)
+
+    for frame in range(total_frames):
+        # Tính tỷ lệ zoom cho ảnh nền và ảnh nhỏ tại frame hiện tại
+        scale_bg = start_scale_bg - (frame / total_frames) * (start_scale_bg - end_scale_bg)  # Zoom out cho nền
+        scale_img = start_scale_img + (frame / total_frames) * (end_scale_img - start_scale_img)  # Zoom in cho ảnh nhỏ
+        
+        # Thay đổi kích thước ảnh nền và ảnh nhỏ theo tỷ lệ
+        resized_bg = cv2.resize(blurred_background, (int(width_1 * scale_bg), int(height_1 * scale_bg)))
+        resized_small = cv2.resize(image_2_with_border, (int(width_2 * scale_img), int(height_2 * scale_img)))
+        
+        # Cắt phần trung tâm của ảnh nền để phù hợp với kích thước video
+        start_x_bg = (resized_bg.shape[1] - frame_width) // 2
+        start_y_bg = (resized_bg.shape[0] - frame_height) // 2
+        cropped_bg = resized_bg[start_y_bg:start_y_bg + frame_height, start_x_bg:start_x_bg + frame_width]
+        
+        # Cắt phần ảnh nhỏ để căn giữa
+        start_x_small = (frame_width - resized_small.shape[1]) // 2
+        start_y_small = (frame_height - resized_small.shape[0]) // 2
+        
+        # Tạo frame kết hợp giữa ảnh nền và ảnh nhỏ
+        base_frame = cropped_bg.copy()
+        base_frame[start_y_small:start_y_small + resized_small.shape[0], start_x_small:start_x_small + resized_small.shape[1]] = resized_small
+        
+        # ✅ Chỉ overlay nếu value == True
+        if value:
+            idx = min(frame, png_count - 1)
+            overlay_rgba = cv2.imread(overlay_png_list[idx], cv2.IMREAD_UNCHANGED)
+            if overlay_rgba is not None and overlay_rgba.shape[2] == 4:
+                base_frame = overlay_rgba_onto_rgb(base_frame, overlay_rgba)
+
+        out.write(base_frame)
+    
+    # Giải phóng đối tượng VideoWriter
+    out.release()
+    print(f"Video đã được tạo thành công tại: {output_path}")
+
+async def cut_and_scale_video_random_async(input_video, path_video, path_audio, scale_width, scale_height):
     max_retries = 10
     attempt = 1
     while attempt <= max_retries:
@@ -946,59 +1620,25 @@ async def cut_and_scale_video_random_async(input_video, path_video, path_audio, 
             scale_factor = duration / video_length
         else:
             scale_factor = 1  # Giữ nguyên tốc độ video nếu video dài hơn hoặc bằng audio
-            
-        base_video = await get_random_video_from_directory(overlay_video_dir)
-        is_overlay_video = random.choice([True, False, True])
-        
-        if is_overlay_video:
-            ffmpeg_command = [
-                "ffmpeg",
-                "-ss", start_time_str,
-                "-i", input_video,  # Video nền
-                "-i", base_video,  # Video overlay
-                "-i", path_audio,
-                "-filter_complex",
-                f"[0:v]scale={scale_width}:{scale_height},fps=24,setpts={scale_factor}*PTS,format=yuv420p[bg];[1:v]scale={scale_width}:{scale_height}[fg];[bg][fg]overlay=format=auto,format=yuv420p[outv]",
-                "-r", "24",
-                "-map", "[outv]",
-                "-map", "2:a",
-                "-t", str(duration),
-                "-c:v", "libx265",
-                "-c:a", "aac",  # Đảm bảo codec âm thanh là AAC
-                "-b:a", "192k",  # Bitrate âm thanh hợp lý
-                "-preset", "ultrafast",
-                "-pix_fmt", "yuv420p",
-                "-y",
-                path_video
-            ]
-        else:
-            ffmpeg_command = [
-                "ffmpeg",
-                "-ss", start_time_str,  # Thời gian bắt đầu cắt
-                "-i", input_video,  # Video đầu vào
-                "-i", path_audio,  # Audio đầu vào
-                "-vf", f"scale={scale_width}:{scale_height},fps=24,setpts={scale_factor}*PTS,format=yuv420p",  # Bộ lọc video
-                "-map", "0:v",
-                "-map", "1:a",
-                "-t", str(duration),
-                '-r', '24',
-                "-c:v", "libx265",
-                "-c:a", "aac",  # Đảm bảo codec âm thanh là AAC
-                "-b:a", "192k",  # Bitrate âm thanh hợp lý
-                "-preset", "ultrafast",
-                "-pix_fmt", "yuv420p",  # Ghi đè file đầu ra nếu đã tồn tại
-                "-y",
-                path_video  # File đầu ra
-            ]
+        ffmpeg_command = [
+            "ffmpeg",
+            "-ss", start_time_str,  # Thời gian bắt đầu cắt
+            "-i", input_video,  # Video đầu vào
+            "-i", path_audio,  # Audio đầu vào
+            "-vf", f"scale={scale_width}:{scale_height},fps=24,setpts={scale_factor}*PTS,format=yuv420p",  # Bộ lọc video
+            "-map", "0:v",
+            "-map", "1:a",
+            "-t", str(duration),
+            '-r', '24',
+            "-c:v", "libx265",
+            "-c:a", "aac",  # Đảm bảo codec âm thanh là AAC
+            "-b:a", "192k",  # Bitrate âm thanh hợp lý
+            "-preset", "ultrafast",
+            "-pix_fmt", "yuv420p",  # Ghi đè file đầu ra nếu đã tồn tại
+            "-y",
+            path_video  # File đầu ra
+        ]
 
-        # Thêm dòng này trước khi gọi process để in ra lệnh FFmpeg đầy đủ
-        print("FFmpeg command:", " ".join(ffmpeg_command))
-        # Thêm code kiểm tra file tồn tại
-        # print(f"Image file exists: {os.path.exists(image_file)}")
-        print(f"Base video exists: {os.path.exists(base_video) if base_video else 'No base video'}")
-        print(f"Audio file exists: {os.path.exists(path_audio)}")
-
-       
         for attempt in range(max_retries):
             path_cmd = " ".join(ffmpeg_command)
             print(f"Command: {path_cmd}")
@@ -1028,177 +1668,99 @@ async def cut_and_scale_video_random_async(input_video, path_video, path_audio, 
                     return False
                 else:
                     print("Retrying...")
-                    await asyncio.sleep(2) 
+                    asyncio.sleep(2) 
         
     # Nếu hết max_attempts lần thử mà vẫn lỗi
     print(f"Lỗi: Không thể tạo video {path_video} sau {max_retries} lần thử.")
     raise Exception(f"Không thể tạo video sau {max_retries} lần thử.")
 
-async def image_to_video_zoom_in_async(image_file, path_video, path_audio, scale_width, scale_height, overlay_video, max_retries=3, retry_delay=2):
-    print("Zoom in Dang chay")
-    """Tạo video từ hình ảnh với hiệu ứng zoom-in và thêm âm thanh."""
-    import random
-    import asyncio
-    import os
+async def run_ffmpeg_async(cmd):
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await process.communicate()
     
-    is_overlay_video = random.choice([True, False, True])
-    base_video = await get_random_video_from_directory(overlay_video)
-    
-    # Lấy thời lượng audio
-    duration = get_audio_duration(path_audio)
+    if process.returncode != 0:
+        raise RuntimeError(f"FFmpeg failed: {stderr.decode()}")
 
-    if is_overlay_video and base_video:
-        ffmpeg_command = [
-            'ffmpeg',
-            '-y', 
-            '-loop', '1',
-            '-framerate', '24',
-            '-i', image_file,
-            '-i', base_video,
-            '-i', path_audio,  
-            '-filter_complex',
-            f"[0:v]format=yuv420p,scale=8000:-1,zoompan=z='min(zoom+0.001,1.5)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=240:s={scale_width}x{scale_height}:fps=24[bg];"
-            f"[1:v]scale={scale_width}:{scale_height},fps=24[overlay_scaled];"
-            f"[bg][overlay_scaled]overlay=format=auto,format=yuv420p[outv]",
-            "-r", "24",
-            "-map", "[outv]",
-            "-map", "2:a",  # Ánh xạ tất cả stream âm thanh từ file audio thứ 3
-            "-t", str(duration),  # Đặt thời lượng video bằng thời lượng audio
-            "-c:v", "libx265",
-            "-c:a", "aac",  # Đảm bảo codec âm thanh là AAC
-            "-b:a", "192k",  # Bitrate âm thanh hợp lý
-            "-preset", "ultrafast",
-            "-pix_fmt", "yuv420p",
-            path_video
-        ]
-    else:
-        ffmpeg_command = [
-            'ffmpeg',
-            '-y',      
-            '-loop', '1',
-            '-framerate', '24',
-            '-i', image_file,
-            '-i', path_audio,
-            '-vf',
-            f"format=yuv420p,scale=8000:-1,zoompan=z='min(zoom+0.001,1.5)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=240:s={scale_width}x{scale_height}:fps=24",
-            '-r', '24',
-            "-map", "0:v",  # Đơn giản hóa ánh xạ video
-            "-map", "1:a",  # Đơn giản hóa ánh xạ audio
-            "-t", str(duration),
-            "-c:v", "libx265",
-            "-c:a", "aac",
-            "-b:a", "192k",
-            "-preset", "ultrafast",
-            "-pix_fmt", "yuv420p",
-            path_video
-        ]
+async def process_video_segment_async(data, text_entry, data_sub, i, video_id, task_id, worker_id):
+    try:
+        # Lấy duration
+        if data.get('file-srt'):
+            start_time, end_time = data_sub[i]
+            duration = convert_to_seconds(end_time) - convert_to_seconds(start_time)
+        else:
+            path_audio = f'media/{video_id}/voice/{text_entry["id"]}.wav'
+            # Nếu không có duration thì lấy tạm giá trị mặc định
+            duration = 10
 
-    # Thêm code kiểm tra file tồn tại
-    print(f"Image file exists: {os.path.exists(image_file)}")
-    print(f"Base video exists: {os.path.exists(base_video) if base_video else 'No base video'}")
-    print(f"Audio file exists: {os.path.exists(path_audio)}")
+        out_file = f'media/{video_id}/video/{text_entry["id"]}.mp4'
+        file = get_filename_from_url(text_entry.get('url_video', ''))
 
-    print(f"Command: {' '.join(ffmpeg_command)}")
-    
-    # Thử tạo video, nếu lỗi thì thử lại
-    for attempt in range(max_retries):
-        print(f"Attempt {attempt + 1}/{max_retries}: Creating video {path_video}")
-        try:
-            # Sử dụng asyncio.create_subprocess_exec để chạy FFmpeg bất đồng bộ
-            process = await asyncio.create_subprocess_exec(
-                *ffmpeg_command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+        if not file:
+            update_status_video(f"Render Lỗi: {os.getenv('name_woker')} - URL không hợp lệ", video_id, task_id, worker_id)
+            raise FileNotFoundError(f"File not found from URL: {text_entry.get('url_video')}")
+
+        path_file = f'media/{video_id}/image/{file}'
+        print(f"Input file: {path_file}")
+
+        file_type = await check_file_type_async(path_file)
+        if file_type not in ["video", "image"]:
+            update_status_video(f"Render Lỗi: {os.getenv('name_woker')} - Loại file không hợp lệ", video_id, task_id, worker_id)
+            raise ValueError(f"Unsupported file type: {file_type} for {path_file}")
+
+        if file_type == "video":
+            print("cut and scale video")
+            await cut_and_scale_video_random_async(path_file, out_file, path_audio, 1920, 1080)
+
+        elif file_type == "image":
+            effects = [
+                create_zoom_out_video_with_background,
+                create_zoom_in_video_with_background,
+                create_parallax_left_video,
+                create_parallax_right_video,
+                create_zoom_in_reverse_video,
+                create_zoom_out_reverse_video
+            ]
+            effect = random.choice(effects)
+            temp_video = f"media/{video_id}/temp/{text_entry['id']}_temp.mp4"
+            os.makedirs(os.path.dirname(temp_video), exist_ok=True)
+
+            # ⚠️ Chạy effect trong thread riêng để không chặn asyncio
+            await asyncio.to_thread(
+                effect,
+                path_file,
+                temp_video,
+                duration=duration,
+                fps=24,
+                frame_width=1920,
+                frame_height=1080
             )
-            
-            stdout, stderr = await process.communicate()
-            
-            if process.returncode == 0:
-                print(f"Video created successfully: {path_video}")
-                return True  # Thành công, thoát hàm
-            else:
-                stderr_output = stderr.decode()
-                print(f"FFmpeg error: {stderr_output}")
-                raise Exception(f"FFmpeg process failed with return code {process.returncode}: {stderr_output[:200]}")
-                
-        except Exception as e:
-            print(f"Attempt {attempt + 1}/{max_retries} failed. Error: {e}")
-            if attempt + 1 == max_retries:
-                print(f"Failed to create video after {max_retries} attempts: {path_video}")
-                return False
-            else:
-                print("Retrying...")
-                await asyncio.sleep(retry_delay)
+
+            # ⚠️ Thay subprocess.run bằng subprocess async
+            cmd = [
+                "ffmpeg",
+                "-y",
+                "-i", temp_video,
+                "-i", path_audio,
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-shortest",
+                out_file
+            ]
+            await run_ffmpeg_async(cmd)
+
+            os.remove(temp_video)
+            print(f"✅ Đã ghép audio: {out_file}")
+        return True
+
+    except Exception as e:
+        print(f"❌ Lỗi: {e}")
+        update_status_video(f"Render Lỗi: {e}", video_id, task_id, worker_id)
+        return False
     
-async def image_to_video_zoom_out_async(image_file, path_video, path_audio, scale_width, scale_height, overlay_video, max_retries=3):
-    print("Zoom out Dang chay")
-    """Tạo video từ hình ảnh với hiệu ứng zoom-in và thêm âm thanh."""
-    import random
-    import asyncio
-    import os
-    import shlex
-    
-    is_overlay_video = random.choice([True,False,True])
-    base_video = await get_random_video_from_directory(overlay_video)
-    duration = get_audio_duration(path_audio)
-    
-    # Kiểm tra file tồn tại
-    print(f"Image file exists: {os.path.exists(image_file)}")
-    print(f"Base video exists: {os.path.exists(base_video) if base_video else 'No base video'}")
-    print(f"Audio file exists: {os.path.exists(path_audio)}")
-    
-    for attempt in range(max_retries):
-        print(f"Attempt {attempt + 1}/{max_retries}: Creating video {path_video}")
-        try:
-            if is_overlay_video and base_video:
-                # Trường hợp 1: Sử dụng overlay video
-                ffmpeg_args = [
-                    "ffmpeg", "-y", "-loop", "1", "-framerate", "24", 
-                    "-i", image_file, "-i", base_video, "-i", path_audio,
-                    "-filter_complex", 
-                    f"[0:v]format=yuv420p,scale=8000:-1,zoompan=z='zoom+0.002':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=240:s={scale_width}x{scale_height}:fps=24[bg];[1:v]scale={scale_width}:{scale_height},fps=24[overlay_scaled];[bg][overlay_scaled]overlay=format=auto,format=yuv420p[outv]",
-                    "-r", "24", "-map", "[outv]", "-map", "2:a", "-t", str(duration),
-                    "-c:v", "libx265", "-c:a", "aac", "-b:a", "192k", "-preset", "ultrafast", "-pix_fmt", "yuv420p", path_video
-                ]
-            else:
-                # Trường hợp 2: Không sử dụng overlay video, sử dụng file audio riêng biệt
-                ffmpeg_args = [
-                    "ffmpeg", "-y", "-loop", "1", "-framerate", "24", 
-                    "-i", image_file, "-i", path_audio,  # Path audio làm input thứ 2
-                    "-vf", f"format=yuv420p,scale=8000:-1,zoompan=z='zoom+0.005':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=240:s={scale_width}x{scale_height},fps=24",
-                    "-r", "24", "-map", "0:v", "-map", "1:a", "-t", str(duration),
-                    "-c:v", "libx265", "-c:a", "aac", "-b:a", "192k", "-preset", "ultrafast", "-pix_fmt", "yuv420p", path_video
-                ]
-            
-            # Chỉ hiển thị lệnh để debug
-            command_str = " ".join(shlex.quote(str(arg)) for arg in ffmpeg_args)
-            print(f"Command: {command_str}")
-            
-            # Sử dụng asyncio.create_subprocess_exec thay vì shell
-            process = await asyncio.create_subprocess_exec(
-                *ffmpeg_args,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            stdout, stderr = await process.communicate()
-            
-            if process.returncode == 0:
-                print(f"Video created successfully: {path_video}")
-                return True
-            else:
-                print(f"FFmpeg error: {stderr.decode()}")
-                raise Exception(f"FFmpeg process failed with return code {process.returncode}")
-                
-        except Exception as e:
-            print(f"Attempt {attempt + 1}/{max_retries} failed. Error: {e}")
-            if attempt + 1 == max_retries:
-                print(f"Failed to create video after {max_retries} attempts: {path_video}")
-                return False
-            else:
-                print("Retrying...")
-                await asyncio.sleep(2)
-          
 async def create_video_lines_async(data, task_id, worker_id, max_concurrent):
     try:
         print("Creating video lines...")
@@ -1240,7 +1802,6 @@ async def create_video_lines_async(data, task_id, worker_id, max_concurrent):
                 result = await task
                 if result:
                     processed_entries += 1
-                    percent_complete = (processed_entries / total_entries) * 100
                     update_status_video(
                         f"Đang Render : Đang tạo video {processed_entries}/{total_entries} thành công", 
                         video_id, task_id, worker_id
@@ -1278,7 +1839,7 @@ async def get_random_video_from_directory(directory_path):
 
 def create_video_lines(data, task_id, worker_id):
     logical_cores = psutil.cpu_count(logical=True)
-    max_concurrent=int(logical_cores /8)
+    max_concurrent=int(logical_cores /4)
     return asyncio.run(create_video_lines_async(data, task_id, worker_id,max_concurrent))
 
 async def login_data_async(session, email, password):
