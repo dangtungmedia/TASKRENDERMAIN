@@ -17,12 +17,6 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Cài torch CUDA 12.1
-RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-
-# Cài Whisper từ GitHub chính thức
-RUN pip install git+https://github.com/openai/whisper.git
-
 # Optional: Add fonts if necessary
 COPY fonts/* /usr/share/fonts/truetype/custom/
 
