@@ -41,9 +41,7 @@ import aiohttp
 from typing import Dict, Set, List, Tuple, Optional
 import os
 import asyncio
-import aiofiles
 import aioboto3
-import botocore
 from fake_useragent import UserAgent
 from urllib.parse import urlparse
 from time import sleep
@@ -52,9 +50,6 @@ import numpy as np
 import os
 import random
 from urllib.parse import urlparse, parse_qs
-import whisper
-import torch
-from youtube_transcript_api import YouTubeTranscriptApi
 from pathlib import Path
 # Nạp biến môi trường từ file .env
 load_dotenv()
