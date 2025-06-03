@@ -1910,7 +1910,7 @@ async def process_video_segment_async(data, text_entry, i, video_id, task_id, wo
                 "-t", str(duration),
                 "-r", "24",
                 "-c:v", "libx265",
-                "-preset", "slower",
+                "-preset", "veryfast",
                 "-pix_fmt", "yuv420p",
                 "-c:a", "aac",
                 "-b:a", "192k",
