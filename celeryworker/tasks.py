@@ -51,6 +51,10 @@ import os
 import random
 from urllib.parse import urlparse, parse_qs
 from pathlib import Path
+import os
+import requests
+import socket
+import netifaces
 # Nạp biến môi trường từ file .env
 load_dotenv()
 
@@ -62,6 +66,22 @@ valid_tokens: Dict[str, str] = {}
 last_zingproxy_request_time = 0
 zingproxy_lock = threading.Lock()
 
+
+def get_local_ip():
+    try:
+        for interface in netifaces.interfaces():
+            addresses = netifaces.ifaddresses(interface)
+            # Kiểm tra IPv4 trong các interface
+            if netifaces.AF_INET in addresses:
+                for addr in addresses[netifaces.AF_INET]:
+                    ip = addr.get('addr')
+                    # Kiểm tra nếu IP thuộc dải 192.168.x.x hoặc 10.x.x.x (mạng LAN)
+                    if ip.startswith('192.168.') or ip.startswith('10.') or ip.startswith('172.'):
+                        return ip
+        return None
+    except Exception as e:
+        print(f"Error getting local IP: {e}")
+        return None
 
 def get_public_ip():
     try:
@@ -75,6 +95,13 @@ def get_public_ip():
     except Exception as e:
         print(f"Error getting public IP: {e}")
         return None
+
+@task_failure.connect
+def task_failure_handler(sender, task_id, exception, args, kwargs, traceback, einfo, **kw):
+    video_id = args[0].get('video_id')
+    worker_id = "None"
+    shutil.rmtree(f'media/{video_id}')
+    update_status_video(f"Render Lỗi : IPV4:{get_public_ip()}/IP_LOCLAL:{get_local_ip()} Xử Lý Video Không Thành Công!", video_id, task_id, worker_id)
 
 
 @shared_task(bind=True, priority=0,name='render_video',time_limit=14200,queue='render_video_content')
@@ -128,11 +155,7 @@ def render_video(self, data):
         shutil.rmtree(f'media/{video_id}')
         update_status_video(f"Render Lỗi : {get_public_ip()}  Không thể upload video", data['video_id'], task_id, worker_id)
         return
-    shutil.rmtree(f'media/{video_id}')
     update_status_video(f"Render Thành Công : Đang Chờ Upload lên Kênh", data['video_id'], task_id, worker_id)
-
-
-
 
 @shared_task(bind=True, priority=1,name='render_video_reupload',time_limit=140000,queue='render_video_reupload')
 def render_video_reupload(self, data):
@@ -165,9 +188,7 @@ def render_video_reupload(self, data):
     if not success:
         shutil.rmtree(f'media/{video_id}')
         return
-    shutil.rmtree(f'media/{video_id}')
     update_status_video(f"Render Thành Công : Đang Chờ Upload lên Kênh", data['video_id'], task_id, worker_id)
-
 
 def seconds_to_hms(seconds):
     hours = seconds // 3600  # Tính giờ
@@ -533,7 +554,6 @@ def get_video_info(data,task_id,worker_id):
         update_status_video(f"Render Lỗi: {get_public_ip()} Phương thức download youtube thất bại",video_id, task_id, worker_id)
         return None
 
-
 def get_youtube_thumbnail(youtube_url, video_id):
     try:
         # Đảm bảo video_id là chuỗi
@@ -632,7 +652,6 @@ def get_youtube_thumbnail(youtube_url, video_id):
     except Exception as e:
         print(f"❌ Lỗi không xác định: {e}")
         return False
-
 
 def get_total_duration_from_ass(ass_file_path):
     """Lấy tổng thời gian từ file .ass dựa trên thời gian kết thúc của dòng Dialogue cuối cùng"""
@@ -1132,7 +1151,7 @@ def loop_video_with_audio(video_id, task_id, worker_id,input_video: str, input_a
         '-shortest',
         '-map', '0:v:0',
         '-map', '1:a:0',
-        '-c:v', 'hevc_nvenc',
+        '-c:v', 'libx265',
         '-preset', preset,
         '-cq', str(cq),
         '-c:a', 'copy',
@@ -1891,7 +1910,7 @@ async def process_video_segment_async(data, text_entry, i, video_id, task_id, wo
                 "-t", str(duration),
                 "-r", "24",
                 "-c:v", "libx265",
-                "-preset", "ultrafast",
+                "-preset", "slower",
                 "-pix_fmt", "yuv420p",
                 "-c:a", "aac",
                 "-b:a", "192k",
