@@ -1222,7 +1222,7 @@ def create_video_post_cast(data, task_id, worker_id):
     update_status_video("Đang Render : Chuẩn bị tạo video nền", data['video_id'], task_id, worker_id)
     create_zoom_in_or_zoom_out_reverse_video(image_path, output_dir, duration=duration, fps=24, frame_width=1920, frame_height=1080)
     update_status_video("Đang Render : Đã Tạo xong video nền chuẩn bị chuyển đổi định dạng", data['video_id'], task_id, worker_id)
-    encode_h265_nvenc(output_dir, video_out_h265, fps=24, preset='p1', cq=28, audio_bitrate='96k')
+    encode_h265_nvenc(output_dir, video_out_h265, fps=24, preset='p7', cq=28, audio_bitrate='96k')
     update_status_video("Đang Render : Chuyển đổi định dạng videos nền thành công", data['video_id'], task_id, worker_id)
     loop_video_with_audio(data['video_id'], task_id, worker_id,video_out_h265,conver_aac,out_video, preset='p1', cq=28)
     update_status_video("Đang Render : Xuất video thành công", data['video_id'], task_id, worker_id)
