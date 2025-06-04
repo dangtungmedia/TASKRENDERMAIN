@@ -123,7 +123,6 @@ def render_video(self, data):
         shutil.rmtree(f'media/{video_id}')
         return
 
-    print(data.get('channel_is_subtitle_active'))
     if data.get('channel_is_subtitle_active'):
         success = create_video_lines(data, task_id, worker_id)
         if not success:
@@ -153,8 +152,6 @@ def render_video(self, data):
         return
     shutil.rmtree(f'media/{video_id}')
     update_status_video(f"Render Thành Công : Đang Chờ Upload lên Kênh", data['video_id'], task_id, worker_id)
-
-
 
 
 @shared_task(bind=True, priority=1,name='render_video_reupload',time_limit=140000,queue='render_video_reupload')
@@ -1109,7 +1106,7 @@ def create_zoom_in_or_zoom_out_reverse_video(image_path, output_path, duration=2
     out.release()
     print(f"✅ Video đã tạo: {output_path}")
 
-def encode_h265_nvenc(input_file: str, output_file: str, fps: int = 24, preset: str = 'p1', cq: int = 28, audio_bitrate: str = '96k'):
+def encode_h265_nvenc(input_file: str, output_file: str, fps: int = 24, preset: str = 'p7', cq: int = 28, audio_bitrate: str = '96k'):
     """
     Encode video dùng ffmpeg với hevc_nvenc, 1920x1080 (không scale), fps, preset và chất lượng CQ tùy chọn.
     - input_file: đường dẫn file video đầu vào (đã 1920x1080)
