@@ -313,7 +313,7 @@ def cread_test_reup(data, task_id, worker_id):
         "-map", "[a]",
         "-c:v", "hevc_nvenc",
         "-c:a", "aac",
-        "-preset", "p1",
+        "-preset", "p7",
         output_path
     ]
     
@@ -1135,7 +1135,7 @@ def encode_h265_nvenc(input_file: str, output_file: str, fps: int = 24, preset: 
     except subprocess.CalledProcessError as e:
         print(f"Encode lỗi: {e}")
 
-def loop_video_with_audio(video_id, task_id, worker_id,input_video: str, input_audio: str, output_file: str, preset: str = 'p1', cq: int = 28):
+def loop_video_with_audio(video_id, task_id, worker_id,input_video: str, input_audio: str, output_file: str, preset: str = 'p7', cq: int = 28):
     """
     Lặp video vô hạn để tạo video dài bằng đúng audio, encode video hevc_nvenc, copy audio gốc.
     - input_video: file video đầu vào để lặp
@@ -1224,7 +1224,7 @@ def create_video_post_cast(data, task_id, worker_id):
     update_status_video("Đang Render : Đã Tạo xong video nền chuẩn bị chuyển đổi định dạng", data['video_id'], task_id, worker_id)
     encode_h265_nvenc(output_dir, video_out_h265, fps=24, preset='p7', cq=28, audio_bitrate='96k')
     update_status_video("Đang Render : Chuyển đổi định dạng videos nền thành công", data['video_id'], task_id, worker_id)
-    loop_video_with_audio(data['video_id'], task_id, worker_id,video_out_h265,conver_aac,out_video, preset='p1', cq=28)
+    loop_video_with_audio(data['video_id'], task_id, worker_id,video_out_h265,conver_aac,out_video, preset='p7', cq=28)
     update_status_video("Đang Render : Xuất video thành công", data['video_id'], task_id, worker_id)
     return True
 
@@ -2713,13 +2713,6 @@ class HttpClient:
                 self.logger.error(f"Error in send method: {str(e)}")
                 return False
             
-def remove_invalid_chars(string):
-    # Kiểm tra nếu đầu vào không phải chuỗi
-    if not isinstance(string, str):
-        return ''
-    # Loại bỏ ký tự Unicode 4 byte
-    return re.sub(r'[^\u0000-\uFFFF]', '', string)
-
 http_client = HttpClient(url=os.getenv('url_web') + "/api/")
 def update_status_video(status_video, video_id, task_id, worker_id, url_thumnail=None, url_video=None, title=None, id_video_google=None):
     data = {
@@ -2728,7 +2721,7 @@ def update_status_video(status_video, video_id, task_id, worker_id, url_thumnail
         'status': status_video,
         'task_id': task_id,
         'worker_id': worker_id,
-        'title': remove_invalid_chars(title),
+        'title': title,
         'url_thumbnail':url_thumnail,
         'url_video': url_video,
         'id_video_google': id_video_google,
