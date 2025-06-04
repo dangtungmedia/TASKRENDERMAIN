@@ -51,9 +51,6 @@ import os
 import random
 from urllib.parse import urlparse, parse_qs
 from pathlib import Path
-import os
-import requests
-import socket
 import netifaces
 # Nạp biến môi trường từ file .env
 load_dotenv()
@@ -101,8 +98,7 @@ def task_failure_handler(sender, task_id, exception, args, kwargs, traceback, ei
     video_id = args[0].get('video_id')
     worker_id = "None"
     shutil.rmtree(f'media/{video_id}')
-    update_status_video(f"Render Lỗi : IPV4:{get_public_ip()}/IP_LOCLAL:{get_local_ip()} Xử Lý Video Không Thành Công!", video_id, task_id, worker_id)
-
+    update_status_video(f"Render Lỗi : {get_public_ip()}/{get_local_ip()} Xử Lý Video Không Thành Công!", video_id, task_id, worker_id)
 
 @shared_task(bind=True, priority=0,name='render_video',time_limit=14200,queue='render_video_content')
 def render_video(self, data):
@@ -114,7 +110,7 @@ def render_video(self, data):
     create_or_reset_directory(f'media/{video_id}')
 
     if not os.path.exists("VIDEO_SCREEN") :
-        update_status_video(f"Render Lỗi : {get_public_ip()}  Thiếu các tệp video  và  video_screen ", data['video_id'], task_id, worker_id)
+        update_status_video(f"Render Lỗi : {get_public_ip()}/{get_local_ip()}  Thiếu các tệp video  và  video_screen ", data['video_id'], task_id, worker_id)
         return
 
     success = download_image(data, task_id, worker_id)
@@ -153,9 +149,13 @@ def render_video(self, data):
     success = upload_video(data, task_id, worker_id)
     if not success:
         shutil.rmtree(f'media/{video_id}')
-        update_status_video(f"Render Lỗi : {get_public_ip()}  Không thể upload video", data['video_id'], task_id, worker_id)
+        update_status_video(f"Render Lỗi : {get_public_ip()}/{get_local_ip()}  Không thể upload video", data['video_id'], task_id, worker_id)
         return
+    shutil.rmtree(f'media/{video_id}')
     update_status_video(f"Render Thành Công : Đang Chờ Upload lên Kênh", data['video_id'], task_id, worker_id)
+
+
+
 
 @shared_task(bind=True, priority=1,name='render_video_reupload',time_limit=140000,queue='render_video_reupload')
 def render_video_reupload(self, data):
@@ -166,7 +166,7 @@ def render_video_reupload(self, data):
     update_status_video("Đang Render : Đang xử lý video render", data['video_id'], task_id, worker_id)
     
     if not os.path.exists("video")  and not os.path.exists("video_screen") :
-        update_status_video(f"Render Lỗi : {get_public_ip()}  Thiếu các tệp video  và  video_screen ", data['video_id'], task_id, worker_id)
+        update_status_video(f"Render Lỗi : {get_public_ip()}/{get_local_ip()}  Thiếu các tệp video  và  video_screen ", data['video_id'], task_id, worker_id)
         return
     
     success = create_or_reset_directory(f'media/{video_id}')
@@ -188,7 +188,9 @@ def render_video_reupload(self, data):
     if not success:
         shutil.rmtree(f'media/{video_id}')
         return
+    shutil.rmtree(f'media/{video_id}')
     update_status_video(f"Render Thành Công : Đang Chờ Upload lên Kênh", data['video_id'], task_id, worker_id)
+
 
 def seconds_to_hms(seconds):
     hours = seconds // 3600  # Tính giờ
@@ -242,7 +244,7 @@ def cread_test_reup(data, task_id, worker_id):
     video_files = [os.path.join(video_dir, f) for f in os.listdir(video_dir) if f.endswith(('.mp4', '.mkv', '.avi'))]
     
     if not video_files:
-        update_status_video(f"Render Lỗi: {get_public_ip()} không có video để render ", video_id, task_id, worker_id)
+        update_status_video(f"Render Lỗi: {get_public_ip()}/{get_local_ip()} không có video để render ", video_id, task_id, worker_id)
         return None
 
     selected_videos = []
@@ -265,7 +267,7 @@ def cread_test_reup(data, task_id, worker_id):
             print(f"Lỗi khi đọc thời gian video {video}: {e}")
 
     if total_duration < duration:
-        update_status_video(f"Render Lỗi: {get_public_ip()} Không thể chọn đủ video để vượt qua thời lượng yêu cầu.", video_id, task_id, worker_id)
+        update_status_video(f"Render Lỗi: {get_public_ip()}/{get_local_ip()} Không thể chọn đủ video để vượt qua thời lượng yêu cầu.", video_id, task_id, worker_id)
         return None
     update_status_video("Đang Render: Đã chọn xong video nối", video_id, task_id, worker_id)
     
@@ -282,7 +284,7 @@ def cread_test_reup(data, task_id, worker_id):
                 else:
                     print(f"Warning: Video không tồn tại - {full_path}")
     except Exception as e:
-        update_status_video(f"Render Lỗi: {get_public_ip()} Không thể tạo danh sách video {str(e)}", video_id, task_id, worker_id)
+        update_status_video(f"Render Lỗi: {get_public_ip()}/{get_local_ip()} Không thể tạo danh sách video {str(e)}", video_id, task_id, worker_id)
         return False
 
     # Lấy dữ liệu crop từ tham số
@@ -356,7 +358,7 @@ def cread_test_reup(data, task_id, worker_id):
     except Exception as e:
         print(f"Lỗi khi chạy lệnh ffmpeg: {str(e)}")
         logging.error(f"FFmpeg Error: {e}")
-        update_status_video(f"Render Lỗi: {get_public_ip()} Lỗi khi thực hiện lệnh ffmpeg - {str(e)}", video_id, task_id, worker_id)
+        update_status_video(f"Render Lỗi: {get_public_ip()}/{get_local_ip()} Lỗi khi thực hiện lệnh ffmpeg - {str(e)}", video_id, task_id, worker_id)
         return False
     
     # Kiểm tra tệp kết quả
@@ -364,7 +366,7 @@ def cread_test_reup(data, task_id, worker_id):
         update_status_video("Đang Render: Xuất video xong ! chuẩn bị upload lên sever", data['video_id'], task_id, worker_id)
         return True
     else:
-        update_status_video(f"Render Lỗi: {get_public_ip()} Lỗi xuất video bằng ffmpeg vui lòng chạy lại ,file xuất lỗi", data['video_id'], task_id, worker_id)
+        update_status_video(f"Render Lỗi: {get_public_ip()}/{get_local_ip()} Lỗi xuất video bằng ffmpeg vui lòng chạy lại ,file xuất lỗi", data['video_id'], task_id, worker_id)
         return False
 
 def update_info_video(data, task_id, worker_id):
@@ -373,21 +375,21 @@ def update_info_video(data, task_id, worker_id):
         video_id = data.get('video_id')
         
         if not video_url :
-            update_status_video(f"Render Lỗi: {get_public_ip()} lỗi không có url video", 
+            update_status_video(f"Render Lỗi: {get_public_ip()}/{get_local_ip()} lỗi không có url video", 
                           data.get('video_id'), task_id, worker_id)
             return False
 
 
         result = get_video_info(data,task_id,worker_id)
         if not result:
-            update_status_video(f"Render Lỗi: {get_public_ip()} lỗi lấy thông tin video và tải video", 
+            update_status_video(f"Render Lỗi: {get_public_ip()}/{get_local_ip()} lỗi lấy thông tin video và tải video", 
                           data.get('video_id'), task_id, worker_id)
             return False
         
         
         thumnail = get_youtube_thumbnail(video_url,video_id)
         if not thumnail:
-            update_status_video(f"Render Lỗi: {get_public_ip()} lỗi lấy ảnh thumbnail", 
+            update_status_video(f"Render Lỗi: {get_public_ip()}/{get_local_ip()} lỗi lấy ảnh thumbnail", 
                           data.get('video_id'), task_id, worker_id)
             return False
         update_status_video(f"Đang Render : Đã lấy thành công thông tin video reup", 
@@ -396,7 +398,7 @@ def update_info_video(data, task_id, worker_id):
 
     except requests.RequestException as e:
         print(f"Network error: {e}")
-        update_status_video(f"Render Lỗi: {get_public_ip()} Lỗi kết nối - {str(e)}", 
+        update_status_video(f"Render Lỗi: {get_public_ip()}/{get_local_ip()} Lỗi kết nối - {str(e)}", 
                           data.get('video_id'), task_id, worker_id)
         return False
         
@@ -408,7 +410,7 @@ def update_info_video(data, task_id, worker_id):
         
     except Exception as e:
         print(f"Unexpected error: {e}")
-        update_status_video(f"Render Lỗi: {get_public_ip()} Lỗi không xác định - {str(e)}", 
+        update_status_video(f"Render Lỗi: {get_public_ip()}/{get_local_ip()} Lỗi không xác định - {str(e)}", 
                           data.get('video_id'), task_id, worker_id)
         return False
 
@@ -545,14 +547,15 @@ def get_video_info(data,task_id,worker_id):
                 print(f"Lỗi không xác định (lần {attempt + 1}): {str(e)}")
                 if attempt < max_retries - 1:
                     time.sleep(retry_delay)
-        update_status_video(f"Render Lỗi: {get_public_ip()} Không thể tải video sau nhiều lần thử", 
+        update_status_video(f"Render Lỗi: {get_public_ip()}/{get_local_ip()} Không thể tải video sau nhiều lần thử", 
                           data.get('video_id'), task_id, worker_id)
         return None
         
     except Exception as e:
         print(f"Lỗi không xác định trong quá trình xử lý: {str(e)}")
-        update_status_video(f"Render Lỗi: {get_public_ip()} Phương thức download youtube thất bại",video_id, task_id, worker_id)
+        update_status_video(f"Render Lỗi: {get_public_ip()}/{get_local_ip()} Phương thức download youtube thất bại",video_id, task_id, worker_id)
         return None
+
 
 def get_youtube_thumbnail(youtube_url, video_id):
     try:
@@ -653,6 +656,7 @@ def get_youtube_thumbnail(youtube_url, video_id):
         print(f"❌ Lỗi không xác định: {e}")
         return False
 
+
 def get_total_duration_from_ass(ass_file_path):
     """Lấy tổng thời gian từ file .ass dựa trên thời gian kết thúc của dòng Dialogue cuối cùng"""
     total_duration = 0
@@ -729,14 +733,14 @@ def create_video_file(data, task_id, worker_id):
                     update_status_video(f"Đang Render: Đã xuất video {percentage:.2f}%", video_id, task_id, worker_id)
                 except Exception as e:
                     print(f"Error parsing time: {e}")
-                    update_status_video(f"Render Lỗi : {get_public_ip()}  Không thể tính toán hoàn thành", data['video_id'], task_id, worker_id)
+                    update_status_video(f"Render Lỗi : {get_public_ip()}/{get_local_ip()}  Không thể tính toán hoàn thành", data['video_id'], task_id, worker_id)
         process.wait()
             
     if process.returncode != 0:
         print("FFmpeg encountered an error.")
         stderr_output = ''.join(process.stderr)
         print(f"Error log:\n{stderr_output}")
-        update_status_video(f"Render Lỗi : {get_public_ip()} không thể render video hoàn thành ", data['video_id'], task_id, worker_id)
+        update_status_video(f"Render Lỗi : {get_public_ip()}/{get_local_ip()} không thể render video hoàn thành ", data['video_id'], task_id, worker_id)
         return False
     else:
         print("Lồng nhạc nền thành công.")
@@ -807,7 +811,7 @@ def create_subtitles(data, task_id, worker_id):
             return True
     except Exception as e:
         print(e)
-        update_status_video(f"Render Lỗi : {get_public_ip()}  Không thể tạo phụ đề", data['video_id'], task_id, worker_id)
+        update_status_video(f"Render Lỗi : {get_public_ip()}/{get_local_ip()}  Không thể tạo phụ đề", data['video_id'], task_id, worker_id)
         return False
 
 def find_last_punctuation_index(line):
@@ -920,7 +924,7 @@ async def upload_video_async(data, task_id, worker_id):
                 # Kiểm tra file tồn tại
                 if not os.path.exists(video_path):
                     error_msg = f"Không tìm thấy file {video_path}"
-                    update_status_video(f"Render Lỗi : {get_public_ip()}  {error_msg}", video_id, task_id, worker_id)
+                    update_status_video(f"Render Lỗi : {get_public_ip()}/{get_local_ip()}  {error_msg}", video_id, task_id, worker_id)
                     return False
 
                 object_name = f'data/{video_id}/{name_video}.mp4'
@@ -977,17 +981,17 @@ async def upload_video_async(data, task_id, worker_id):
         
         except FileNotFoundError as e:
             error_msg = str(e)
-            update_status_video(f"Render Lỗi : {get_public_ip()} File không tồn tại - {error_msg[:20]}", video_id, task_id, worker_id)
+            update_status_video(f"Render Lỗi : {get_public_ip()}/{get_local_ip()} File không tồn tại - {error_msg[:20]}", video_id, task_id, worker_id)
             break  # Nếu file không tồn tại, dừng thử
         
         except Exception as e:
             error_msg = str(e)
-            update_status_video(f"Render Lỗi : {get_public_ip()} Lỗi khi upload {error_msg[:20]}", video_id, task_id, worker_id)
+            update_status_video(f"Render Lỗi : {get_public_ip()}/{get_local_ip()} Lỗi khi upload {error_msg[:20]}", video_id, task_id, worker_id)
             attempt += 1
             
             if attempt < max_retries:
                 # Nếu còn lượt thử lại, đợi một chút rồi thử lại
-                update_status_video(f"Render Lỗi : {get_public_ip()} Thử lại lần {attempt + 1}", video_id, task_id, worker_id)
+                update_status_video(f"Render Lỗi : {get_public_ip()}/{get_local_ip()} Thử lại lần {attempt + 1}", video_id, task_id, worker_id)
                 await asyncio.sleep(3)  # Đợi 3 giây trước khi thử lại
     return False
 # Hàm wrapper để chạy upload không đồng bộ
@@ -1151,7 +1155,7 @@ def loop_video_with_audio(video_id, task_id, worker_id,input_video: str, input_a
         '-shortest',
         '-map', '0:v:0',
         '-map', '1:a:0',
-        '-c:v', 'libx265',
+        '-c:v', 'hevc_nvenc',
         '-preset', preset,
         '-cq', str(cq),
         '-c:a', 'copy',
@@ -1172,14 +1176,14 @@ def loop_video_with_audio(video_id, task_id, worker_id,input_video: str, input_a
                     update_status_video(f"Đang Render: Đã xuất video {percentage:.2f}%", video_id, task_id, worker_id)
                 except Exception as e:
                     print(f"Error parsing time: {e}")
-                    update_status_video(f"Render Lỗi : {get_public_ip()}  Không thể tính toán hoàn thành", data['video_id'], task_id, worker_id)
+                    update_status_video(f"Render Lỗi : {get_public_ip()}/{get_local_ip()}  Không thể tính toán hoàn thành", data['video_id'], task_id, worker_id)
         process.wait()
             
     if process.returncode != 0:
         print("FFmpeg encountered an error.")
         stderr_output = ''.join(process.stderr)
         print(f"Error log:\n{stderr_output}")
-        update_status_video(f"Render Lỗi : {get_public_ip()} không thể render video hoàn thành ", data['video_id'], task_id, worker_id)
+        update_status_video(f"Render Lỗi : {get_public_ip()}/{get_local_ip()} không thể render video hoàn thành ", data['video_id'], task_id, worker_id)
         return False
     else:
         print("Lồng nhạc nền thành công.")
@@ -1860,7 +1864,7 @@ async def process_video_segment_async(data, text_entry, i, video_id, task_id, wo
         file = get_filename_from_url(text_entry.get('url_video', ''))
 
         if not file:
-            update_status_video(f"Render Lỗi: {get_public_ip()} - URL không hợp lệ", video_id, task_id, worker_id)
+            update_status_video(f"Render Lỗi: {get_public_ip()}/{get_local_ip()} - URL không hợp lệ", video_id, task_id, worker_id)
             raise FileNotFoundError(f"File not found from URL: {text_entry.get('url_video')}")
 
         path_file = f'media/{video_id}/image/{file}'
@@ -1868,7 +1872,7 @@ async def process_video_segment_async(data, text_entry, i, video_id, task_id, wo
 
         file_type = await check_file_type_async(path_file)
         if file_type not in ["video", "image"]:
-            update_status_video(f"Render Lỗi: {get_public_ip()} - Loại file không hợp lệ", video_id, task_id, worker_id)
+            update_status_video(f"Render Lỗi: {get_public_ip()}/{get_local_ip()} - Loại file không hợp lệ", video_id, task_id, worker_id)
             raise ValueError(f"Unsupported file type: {file_type} for {path_file}")
 
         if file_type == "video":
@@ -2408,7 +2412,7 @@ async def download_audio_async(data, task_id, worker_id):
             # Kiểm tra kết quả
             if False in results or any(isinstance(r, Exception) for r in results):
                 update_status_video(
-                    f"Render Lỗi : {get_public_ip()} Lỗi khi tạo giọng đọc",
+                    f"Render Lỗi : {get_public_ip()}/{get_local_ip()} Lỗi khi tạo giọng đọc",
                     video_id, task_id, worker_id
                 )
                 return False
@@ -2429,7 +2433,7 @@ async def download_audio_async(data, task_id, worker_id):
     except Exception as e:
         print(f"Lỗi tổng thể: {str(e)}")
         update_status_video(
-            f"Render Lỗi : {get_public_ip()} Không thể tải xuống âm thanh - {str(e)}",
+            f"Render Lỗi : {get_public_ip()}/{get_local_ip()} Không thể tải xuống âm thanh - {str(e)}",
             video_id, task_id, worker_id
         )
         return False
@@ -2532,7 +2536,7 @@ async def download_image_async(data, task_id, worker_id):
     for item in text_entries:
         if item.get('url_video') == "":
             update_status_video(
-                f"Render Lỗi : {get_public_ip()} item hình ảnh lỗi vui lòng xử lý lại",
+                f"Render Lỗi : {get_public_ip()}/{get_local_ip()} item hình ảnh lỗi vui lòng xử lý lại",
                 video_id, task_id, worker_id
             )
             return False
@@ -2610,7 +2614,7 @@ async def download_image_async(data, task_id, worker_id):
             if not result:
                 print(f"Lỗi tải xuống hình ảnh từ {url}")
                 update_status_video(
-                    f"Render Lỗi : {get_public_ip()} Lỗi tải xuống hình ảnh {url}",
+                    f"Render Lỗi : {get_public_ip()}/{get_local_ip()} Lỗi tải xuống hình ảnh {url}",
                     video_id, task_id, worker_id
                 )
                 return False
