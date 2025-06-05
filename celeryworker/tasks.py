@@ -188,7 +188,6 @@ def render_video_reupload(self, data):
     shutil.rmtree(f'media/{video_id}')
     update_status_video(f"Render Thành Công : Đang Chờ Upload lên Kênh", data['video_id'], task_id, worker_id)
 
-
 def seconds_to_hms(seconds):
     hours = seconds // 3600  # Tính giờ
     minutes = (seconds % 3600) // 60  # Tính phút
