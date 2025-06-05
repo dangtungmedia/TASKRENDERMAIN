@@ -552,7 +552,6 @@ def get_video_info(data,task_id,worker_id):
         update_status_video(f"Render Lỗi: {get_public_ip()}/{get_local_ip()} Phương thức download youtube thất bại",video_id, task_id, worker_id)
         return None
 
-
 def get_youtube_thumbnail(youtube_url, video_id):
     try:
         # Đảm bảo video_id là chuỗi
@@ -651,7 +650,6 @@ def get_youtube_thumbnail(youtube_url, video_id):
     except Exception as e:
         print(f"❌ Lỗi không xác định: {e}")
         return False
-
 
 def get_total_duration_from_ass(ass_file_path):
     """Lấy tổng thời gian từ file .ass dựa trên thời gian kết thúc của dòng Dialogue cuối cùng"""
@@ -1142,23 +1140,26 @@ def loop_video_with_audio(video_id, task_id, worker_id,input_video: str, input_a
     - output_file: file đầu ra
     - preset: preset ffmpeg nvenc, mặc định 'p1'
     - cq: chất lượng constant quality, mặc định 28
+
+    
     """
+    duration = get_audio_duration(input_audio)
     cmd = [
         'ffmpeg',
-        '-stream_loop', '-1',
+        '-stream_loop', '999',                      # lặp nhiều nhưng không vô hạn
         '-i', input_video,
         '-i', input_audio,
-        '-shortest',
+        '-t', str(int(duration)),                   # cắt chính xác theo độ dài audio
         '-map', '0:v:0',
         '-map', '1:a:0',
         '-c:v', 'hevc_nvenc',
         '-preset', preset,
         '-cq', str(cq),
-        '-c:a', 'copy',
+        '-c:a', 'aac',                              # không dùng 'copy' để tránh lỗi ngắt audio
+        '-b:a', '128k',
         '-movflags', '+faststart',
         output_file
     ]
-    duration = get_audio_duration(input_audio)
     with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True) as process:
         for line in process.stderr:
             if "time=" in line:
