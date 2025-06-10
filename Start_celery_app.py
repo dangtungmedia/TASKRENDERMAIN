@@ -117,7 +117,7 @@ class VideoDownloader:
                         "-c:v", "hevc_nvenc",  # Codec video
                         "-c:a", "aac",  # Đảm bảo codec âm thanh là AAC
                         "-b:a", "192k",  # Bitrate âm thanh hợp lý
-                        "-preset", "hq",
+                        "-preset", "p7",
                         "-pix_fmt", "yuv420p",  # Định dạng pixel
                         "-y",
                         file_path  # Đường dẫn lưu video sau xử lý
