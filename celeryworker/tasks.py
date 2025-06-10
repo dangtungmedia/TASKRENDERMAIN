@@ -145,7 +145,7 @@ def render_video(self, data):
             shutil.rmtree(f'media/{video_id}')
             return
         
-    success = upload_video(data, task_id, worker_id)
+    success = asyncio.run(upload_video_async(data, task_id, worker_id))
     if not success:
         shutil.rmtree(f'media/{video_id}')
         update_status_video(f"Render Lỗi : {get_public_ip()}/{get_local_ip()}  Không thể upload video", data['video_id'], task_id, worker_id)
@@ -175,13 +175,12 @@ def render_video_reupload(self, data):
     if not success:
         shutil.rmtree(f'media/{video_id}')
         return
-    
-    success = cread_test_reup(data, task_id, worker_id)
+    success = asyncio.run(cread_test_reup(data, task_id, worker_id))
     if not success:
         shutil.rmtree(f'media/{video_id}')
         return
     
-    success = upload_video(data, task_id, worker_id)
+    success = asyncio.run(upload_video_async(data, task_id, worker_id))
     if not success:
         shutil.rmtree(f'media/{video_id}')
         return
@@ -227,7 +226,7 @@ def parse_crop_data(crop_data_str):
     
     return crop_data
 
-def cread_test_reup(data, task_id, worker_id):
+async def cread_test_reup(data, task_id, worker_id):
     video_dir = "video"
     video_id = data.get('video_id')
     video_path = f'media/{video_id}/cache.mp4'
@@ -897,7 +896,6 @@ async def upload_video_async(data, task_id, worker_id):
                     task_id, 
                     worker_id
                 )
-    
     max_retries = 5  # Số lần thử lại tối đa
     attempt = 0
     success = False
@@ -989,16 +987,6 @@ async def upload_video_async(data, task_id, worker_id):
                 await asyncio.sleep(3)  # Đợi 3 giây trước khi thử lại
     return False
 # Hàm wrapper để chạy upload không đồng bộ
-async def run_async_upload(data, task_id, worker_id):
-    try:
-        return await upload_video_async(data, task_id, worker_id)
-    except Exception as e:
-        print(f"Async upload error: {e}")
-        return False
-
-# Hàm đồng bộ để tương thích với mã cũ
-def upload_video(data, task_id, worker_id):
-    return asyncio.run(run_async_upload(data, task_id, worker_id))
 
 def concat_audios(data, output_path):
     text = data.get('text_content')
@@ -2728,3 +2716,118 @@ def update_status_video(status_video, video_id, task_id, worker_id, url_thumnail
         "secret_key": os.environ.get('SECRET_KEY')
     }
     http_client.send(data)
+
+
+class WebSocketClient:
+    def __init__(self, ws_url):
+        self.ws_url = ws_url
+        self.ws = None
+
+    def connect(self):
+        try:
+            self.ws = websocket.create_connection(self.ws_url, timeout=10)
+            print(f"✅ Kết nối WebSocket thành công: {self.ws_url}")
+        except Exception as e:
+            print(f"❌ Không thể kết nối WebSocket: {e}")
+            self.ws = None
+
+    def reconnect_and_send(self, payload):
+        try:
+            self.connect()
+            if self.ws:
+                self.ws.send(json.dumps(payload))
+        except Exception as e:
+            print(f"❌ Gửi lại sau khi reconnect thất bại: {e}")
+
+    def send(self, video_id, progress, status="info"):
+        payload = {
+            "video_id": video_id,
+            "progress": progress,
+            "status": status
+        }
+        if self.ws:
+            try:
+                self.ws.send(json.dumps(payload))
+            except Exception as e:
+                print(f"❌ Gửi WS lỗi: {e} → thử reconnect")
+                self.reconnect_and_send(payload)
+
+    def close(self):
+        if self.ws:
+            try:
+                self.ws.close()
+            except:
+                pass
+
+@shared_task(bind=True, priority=0, name='start_live', time_limit=14200, queue='start_live_task')
+def start_live_task(self, room_id, item_id, video_url, id_live):
+    folder = f"Media_Live/{item_id}"
+    save_path = f"{folder}/{id_live}.mp4"
+
+    os.makedirs(folder, exist_ok=True)
+
+    ws_url = os.getenv('WS_URL', f'ws://localhost:8000/ws/live/{room_id}/')
+    ws_client = WebSocketClient(ws_url)
+    ws_client.connect()
+    ws_client.send(item_id, "Đang Live : đã nhận thông tin chuẩn bị tải video live...", status="info")
+
+    try:
+        # Tải video
+        is_downloaded = asyncio.run(download_video(video_url, save_path, ws_client, item_id))
+        if not is_downloaded:
+            ws_client.send(item_id, "Đang Live :Tải video thất bại", status="error")
+            return False
+
+        ws_client.send(item_id, "Đang Live : Video đã tải xong. Bắt đầu chuẩn bị phát live...", status="info")
+        time.sleep(3)
+
+        stream_key = id_live
+        ffmpeg_command = [
+            "ffmpeg",
+            "-stream_loop", "-1",
+            "-re",
+            "-i", save_path,
+            "-c", "copy",
+            "-f", "flv",
+            f"rtmp://a.rtmp.youtube.com/live2/{stream_key}"
+        ]
+
+        try:
+            ws_client.send(item_id, "Đang Live : 🚀 Bắt đầu phát live...", status="start")
+            subprocess.run(ffmpeg_command, check=True)
+        except subprocess.CalledProcessError as e:
+            ws_client.send(item_id, f"Live Thất Bại : Lỗi khi chạy FFmpeg: {e}", status="error")
+            return False
+
+        return True
+    finally:
+        ws_client.send(item_id, "Live Thất Bại : Live kết thúc hoặc bị gián đoạn", status="done")
+        ws_client.close()
+
+async def download_video(video_url, save_path, ws_client, item_id):
+    try:
+        response = requests.get(video_url, stream=True, timeout=30)
+        response.raise_for_status()
+
+        total_length = int(response.headers.get('content-length', 0))
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+        downloaded = 0
+        last_percent = -1
+
+        with open(save_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if total_length:
+                        percent = int(100 * downloaded / total_length)
+                        if percent > last_percent:
+                            last_percent = percent
+                            ws_client.send(item_id, f"Đang Live : Tải video Live {percent}%", status="downloading")
+                            print(f"\r📥 {percent}%", end="")
+        ws_client.send(item_id, "Đang Live :✅ Tải thành công", status="success")
+        return True
+    except Exception as e:
+        ws_client.send(item_id, f"Live Thất Bại : Lỗi tải video", status="error")
+        return False
