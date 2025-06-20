@@ -2099,7 +2099,9 @@ async def get_audio_url_async(session, ACCESS_TOKEN, url_voice_text):
         # Gửi yêu cầu POST đến API
         url = "https://typecast.ai/api/speak/batch/get"
         headers = {
-            "Authorization": f"Bearer {ACCESS_TOKEN}"
+            "Authorization": f"Bearer {ACCESS_TOKEN}",
+            "Content-Type": "application/json",
+            "User-Agent": UserAgent().google
         }
         try:
             async with session.post(url, headers=headers, json=url_voice_text) as response:
