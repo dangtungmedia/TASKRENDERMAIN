@@ -2178,7 +2178,8 @@ async def get_voice_super_voice_async(session, result, text, file_name, semaphor
 
                         url_voice = await get_audio_url_async(session, ACCESS_TOKEN, url)
                         if url_voice:
-                            async with session.get(url_voice, headers={'Authorization': f'Bearer {ACCESS_TOKEN}'}) as download_response:
+                            async with session.get(url_voice, headers={'Authorization': f'Bearer {ACCESS_TOKEN}',
+                                                                       "User-Agent": UserAgent().google}) as download_response:
                                 if download_response.status == 200:
                                     content = await download_response.read()
                                     with open(file_name, 'wb') as f:
