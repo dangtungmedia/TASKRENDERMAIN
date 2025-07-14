@@ -2214,24 +2214,26 @@ def request_zingproxy_if_needed():
     with zingproxy_lock:
         current_time = time.time()
         elapsed_time = current_time - last_zingproxy_request_time
+        wait_time = 20 - elapsed_time  # bạn đặt mốc 60s
 
-        if elapsed_time >= 30:
-            try:
-                print("🌀 Gửi request đổi IP...")
-                response = requests.get(
-                    "https://api.zingproxy.com/getip/765e18619cf733d4c8242254cdf3d7c9d9bcc38b",
-                    timeout=10
-                )
-                if response.status_code == 200:
-                    print("✅ Đã đổi IP thành công.")
-                else:
-                    print(f"⚠️ Đổi IP thất bại, status: {response.status_code}")
-            except Exception as e:
-                print(f"❌ Lỗi khi đổi IP: {e}")
+        if wait_time > 0:
+            print(f"⏳ Chưa đủ 20s (còn {int(wait_time)}s), đang đợi...")
+            time.sleep(wait_time)
 
-            last_zingproxy_request_time = current_time  # Cập nhật thời gian cuối cùng
-        else:
-            print(f"⏳ Chưa đủ 60s (còn {int(60 - elapsed_time)}s), không đổi IP.")
+        try:
+            print("🌀 Gửi request đổi IP...")
+            response = requests.get(
+                "https://api.zingproxy.com/getip/765e18619cf733d4c8242254cdf3d7c9d9bcc38b",
+                timeout=10
+            )
+            if response.status_code == 200:
+                print("✅ Đã đổi IP thành công.")
+            else:
+                print(f"⚠️ Đổi IP thất bại, status: {response.status_code}")
+        except Exception as e:
+            print(f"❌ Lỗi khi đổi IP: {e}")
+
+        last_zingproxy_request_time = time.time()  # Cập nhật lại sau khi request xong
 
 def get_audio_duration(file_path):
     try:
