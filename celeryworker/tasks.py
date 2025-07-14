@@ -2161,6 +2161,8 @@ async def get_voice_super_voice_async(session, result, text, file_name, semaphor
 
                     response = requests.post(url, headers=headers, json=style_name_data, proxies={"https": proxy_url})
 
+                    print(f"Response status code xxxx: {response.status_code}")
+
                     # ✅ Token hết hạn
                     if response.status_code == 401:
                         print(f"⚠️ Token hết hạn với {email}, đang lấy lại token...")
