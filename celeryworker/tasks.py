@@ -2215,7 +2215,7 @@ def request_zingproxy_if_needed():
         current_time = time.time()
         elapsed_time = current_time - last_zingproxy_request_time
 
-        if elapsed_time >= 6:
+        if elapsed_time >= 30:
             try:
                 print("🌀 Gửi request đổi IP...")
                 response = requests.get(
